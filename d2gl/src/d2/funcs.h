@@ -22,6 +22,7 @@
 
 namespace d2gl::d2 {
 
+bool is_ui_window(const ui_window_t window);
 uint32_t mpqLoad(const char* mpqfile);
 glm::ivec2 getCursorPos();
 bool isPerspective();

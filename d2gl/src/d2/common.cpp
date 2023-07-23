@@ -27,6 +27,7 @@
 
 namespace d2gl::d2 {
 
+uint32_t* ui_window = (uint32_t*)getProc((DLL_D2CLIENT), (0x1248B4), (0x11A6A8), (0xFB070), (0x1040C0), (0x102B58), (0xFAD80), (0x11C890), (0x3A27C0));
 uint32_t* screen_width = (uint32_t*)getProc((DLL_D2CLIENT), (0xD40E4), (0xD40F4), (0xF5C5C), (0xF4FC4), (0xDC6E0), (0xDBC48), (0xF7034), (0x31146C));
 uint32_t* screen_height = (uint32_t*)getProc((DLL_D2CLIENT), (0xD40E0), (0xD40F0), (0xF5C60), (0xF4FC8), (0xDC6E4), (0xDBC4C), (0xF7038), (0x311470));
 uint32_t* screen_shift = (uint32_t*)getProc((DLL_D2CLIENT), (0x115C10), (0x10B9C4), (0x11C1C0), (0x11C3E4), (0x11C1D0), (0x11C414), (0x11D070), (0x3A5210));

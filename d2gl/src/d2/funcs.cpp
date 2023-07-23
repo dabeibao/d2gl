@@ -26,6 +26,11 @@
 
 namespace d2gl::d2 {
 
+bool is_ui_window(const ui_window_t window)
+{
+	return ui_window[window];
+}
+
 uint32_t mpqLoad(const char* mpqfile)
 {
 	if (isVer(V_114d))

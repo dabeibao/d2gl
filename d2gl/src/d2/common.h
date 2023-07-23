@@ -69,6 +69,7 @@ typedef uint32_t(__fastcall* getFramedTextSize_t)(const wchar_t* str, uint32_t* 
 typedef uint16_t(__fastcall* getFontHeight_t)(void);
 typedef uint32_t(__fastcall* setTextSize_t)(uint32_t size);
 
+extern uint32_t* ui_window;
 extern uint32_t* screen_width;
 extern uint32_t* screen_height;
 extern uint32_t* screen_shift;

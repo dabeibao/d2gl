@@ -290,7 +290,8 @@ bool HDText::drawFramedText(const wchar_t* str, int x, int y, uint32_t color, ui
 		return false;
 
 	if (*d2::is_alt_clicked)
-		return true;
+		if (!d2::is_ui_window(d2::UI_WINDOW_INVENTORY))
+			return true;
 
 	const auto unit = d2::getSelectedUnit();
 	if (unit) {
