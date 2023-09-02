@@ -161,7 +161,7 @@ void Menu::draw()
 		ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse;
 	static ImGuiCond window_pos_cond = ImGuiCond_Appearing;
 
-	ImGui::SetNextWindowSize({ 680.0f, 540.0f }, ImGuiCond_Always);
+	ImGui::SetNextWindowSize({ 680.0f, 600.0f }, ImGuiCond_Always);
 	ImGui::SetNextWindowSizeConstraints({ 10.0f, 10.0f }, max_size);
 	ImGui::SetNextWindowPos(window_pos, window_pos_cond, ImVec2(0.5f, 0.5f));
 	ImGui::SetNextWindowBgAlpha(0.90f);
@@ -201,6 +201,9 @@ void Menu::draw()
 					drawInput2("##ws", "Input custom width & height. (min: 800 x 600)", (glm::ivec2*)(&m_options.window.size_save), { 800, 600 }, { App.desktop_resolution.z, App.desktop_resolution.w });
 					checkChanged(!App.resolutions.selected && App.window.size != m_options.window.size_save);
 				ImGui::EndDisabled();
+				drawSeparator();
+				drawCheckbox_m("Hide Titlebar", m_options.window.hide_title_bar, "Hide window title bar.", hide_title_bar);
+				checkChanged(m_options.window.hide_title_bar != App.window.hide_title_bar);
 				drawSeparator();
 				drawCheckbox_m("Centered Window", m_options.window.centered, "Make window centered to desktop screen.", centered_window);
 				checkChanged(m_options.window.centered != App.window.centered);
@@ -254,6 +257,7 @@ void Menu::draw()
 					App.window.fullscreen = m_options.window.fullscreen;
 					App.window.size = m_options.window.size_save;
 					App.window.size_save = m_options.window.size_save;
+					App.window.hide_title_bar = m_options.window.hide_title_bar;
 					App.window.centered = m_options.window.centered;
 					App.window.position = m_options.window.position;
 					App.cursor.unlock = m_options.unlock_cursor;
@@ -266,6 +270,7 @@ void Menu::draw()
 					saveBool("Screen", "fullscreen", App.window.fullscreen);
 					saveInt("Screen", "window_width", App.window.size.x);
 					saveInt("Screen", "window_height", App.window.size.y);
+					saveBool("Screen", "hide_title_bar", App.window.hide_title_bar);
 					saveBool("Screen", "centered_window", App.window.centered);
 					saveInt("Screen", "window_posx", App.window.position.x);
 					saveInt("Screen", "window_posy", App.window.position.y);

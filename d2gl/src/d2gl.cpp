@@ -44,6 +44,11 @@ __declspec(dllexport) void __stdcall setCustomScreenSize(uint32_t width, uint32_
 	d2gl::App.game.custom_size = { width, height };
 }
 
+__declspec(dllexport) bool isHDTextEnabled()
+{
+    return d2gl::App.hd_text.active;
+}
+
 #ifdef __cplusplus
 }
 #endif

@@ -133,6 +133,8 @@ void saveIni()
 		"; Window size.\n"
 		"window_width=%d\n"
 		"window_height=%d\n\n"
+		"; Hide window title bar.\n"
+		"hide_title_bar=%s\n\n"
 		"; Always centered window on launch.\n"
 		"; Window position (window_posx/window_posy) will be ignored.\n"
 		"centered_window=%s\n\n"
@@ -161,6 +163,7 @@ void saveIni()
 		boolString(App.window.fullscreen),
 		App.window.size.x,
 		App.window.size.y,
+		boolString(App.window.hide_title_bar),
 		boolString(App.window.centered),
 		App.window.position.x,
 		App.window.position.y,
@@ -316,6 +319,7 @@ void loadIni()
 		App.window.size.y = getInt("Screen", "window_height", App.window.size.y, 600, App.desktop_resolution.w);
 		App.window.size_save = App.window.size;
 
+		App.window.hide_title_bar = getBool("Screen", "hide_title_bar", App.window.hide_title_bar);
 		App.window.centered = getBool("Screen", "centered_window", App.window.centered);
 		App.window.position.x = getInt("Screen", "window_posx", App.window.position.x, App.desktop_resolution.x, App.desktop_resolution.z);
 		App.window.position.y = getInt("Screen", "window_posy", App.window.position.y, App.desktop_resolution.y, App.desktop_resolution.w);

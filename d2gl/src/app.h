@@ -72,6 +72,7 @@ struct D2GLApp {
 		bool centered = true;
 		bool dark_mode = true;
 		bool resized = false;
+		bool hide_title_bar = false;
 	} window;
 
 	struct {

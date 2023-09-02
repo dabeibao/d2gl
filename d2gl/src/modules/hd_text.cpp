@@ -550,11 +550,15 @@ uint32_t HDText::getNormalTextWidth(const wchar_t* str, const int n_chars)
 
 uint32_t HDText::getFramedTextSize(const wchar_t* str, uint32_t* width, uint32_t* height)
 {
-	const auto font = getFont(m_text_size);
+	uint32_t text_size = m_text_size == 1? 16 : m_text_size;
+	const auto font = getFont(text_size);
 	const auto size = font->getTextSize(str);
 
-	*width = (uint32_t)(size.x + (m_text_size == 1 ? 10 : 0));
-	*height = m_text_size == 1 ? (font->getLineCount() * 18 + 2) : (uint32_t)size.y;
+	*width = (uint32_t)(size.x + (text_size == 1 ? 10 : 0));
+	*height = text_size == 1 ? (font->getLineCount() * 18 + 2) : (uint32_t)size.y;
+        if (m_text_size == 1) {
+		*height += (uint32_t)(font->getLineHeight() / 4);
+	}
 	m_last_text_width = *width;
 	m_last_text_height = *height;
 
