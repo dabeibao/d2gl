@@ -101,15 +101,30 @@ Menu::Menu()
 	io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
 	io.IniFilename = NULL;
 
-	BufferData font1 = helpers::loadFile("assets\\fonts\\ExocetBlizzardMedium.otf");
-	BufferData font2 = helpers::loadFile("assets\\fonts\\Formal436BT.ttf");
+	static const ImWchar chineseRanges[] = {
+		0x0020, 0x00FF, // Basic Latin + Latin Supplement
+		0x2000, 0x206F, // General Punctuation
+		0x3000, 0x30FF, // CJK Symbols and Punctuations, Hiragana, Katakana
+		0x31F0, 0x31FF, // Katakana Phonetic Extensions
+		0xFF00, 0xFFEF, // Half-width characters
+		0xFFFD, 0xFFFD, // Invalid
+		0x4e00, 0x9FAF, // CJK Ideograms
+		0,
+	};
+	BufferData font1 = helpers::loadFile("assets\\fonts\\chi.ttf");
+	BufferData &font2 = font1;
 
 	io.Fonts->AddFontDefault();
-	m_fonts[20] = font1.size ? io.Fonts->AddFontFromMemoryTTF((void*)font1.data, font1.size, 20.0f) : io.Fonts->Fonts[0];
-	m_fonts[17] = font1.size ? io.Fonts->AddFontFromMemoryTTF((void*)font1.data, font1.size, 17.0f) : io.Fonts->Fonts[0];
-	m_fonts[15] = font1.size ? io.Fonts->AddFontFromMemoryTTF((void*)font1.data, font1.size, 15.0f) : io.Fonts->Fonts[0];
-	m_fonts[14] = font2.size ? io.Fonts->AddFontFromMemoryTTF((void*)font2.data, font2.size, 14.0f) : io.Fonts->Fonts[0];
-	m_fonts[12] = font2.size ? io.Fonts->AddFontFromMemoryTTF((void*)font2.data, font2.size, 12.0f) : io.Fonts->Fonts[0];
+	m_fonts[20] = font1.size ? io.Fonts->AddFontFromMemoryTTF((void*)font1.data, font1.size, 20.0f,
+								  nullptr, chineseRanges) : io.Fonts->Fonts[0];
+	m_fonts[17] = font1.size ? io.Fonts->AddFontFromMemoryTTF((void*)font1.data, font1.size, 17.0f,
+								  nullptr, chineseRanges) : io.Fonts->Fonts[0];
+	m_fonts[15] = font1.size ? io.Fonts->AddFontFromMemoryTTF((void*)font1.data, font1.size, 15.0f,
+								  nullptr, chineseRanges) : io.Fonts->Fonts[0];
+	m_fonts[14] = font2.size ? io.Fonts->AddFontFromMemoryTTF((void*)font2.data, font2.size, 14.0f,
+								  nullptr, chineseRanges) : io.Fonts->Fonts[0];
+	m_fonts[12] = font2.size ? io.Fonts->AddFontFromMemoryTTF((void*)font2.data, font2.size, 12.0f,
+								  nullptr, chineseRanges) : io.Fonts->Fonts[0];
 
 	App.menu_title += (ISGLIDE3X() ? " (Glide / " : " (DDraw / ");
 	App.menu_title += "OpenGL: " + App.gl_ver_str + " / D2LoD: " + helpers::getVersionString() + " / " + helpers::getLangString() + ")";
