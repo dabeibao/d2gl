@@ -842,16 +842,11 @@ void HDText::drawMonsterHealthBar(d2::UnitAny* unit)
 {
 	auto name = d2::getMonsterName(unit);
 	if (!name || wcslen(name) <= 0) {
-		static wchar_t name_str[50] = { 0 };
-		wcscpy_s(name_str, d2::hovered_monster_name);
-		const auto len = wcslen(name_str);
-		if (len <= 0)
-			return;
-
-		auto end = name_str + len - 1;
-		while (end >= name_str && *end == L' ') end--;
-		*(end + 1) = '\0';
-		name = name_str;
+		static wchar_t unknown[20] = L"  ";
+		unknown[0] = L' ';
+		unknown[1] = L' ';
+		unknown[2] = L'\0';
+		name = unknown;
 	}
 
 	const auto hp = d2::getUnitStat(unit, STAT_HP);
