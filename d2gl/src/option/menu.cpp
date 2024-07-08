@@ -126,7 +126,7 @@ Menu::Menu()
 	io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
 	io.IniFilename = NULL;
 
-	BufferData font1 = helpers::loadFile("assets\\fonts\\chi.ttf");
+	BufferData font1 = helpers::loadFile("assets\\fonts\\Chi.ttf");
 	BufferData &font2 = font1;
 	auto glyphs = buildSimplifiedChineseRange();
 
@@ -218,65 +218,65 @@ void Menu::draw()
 		ImGui::PopStyleColor();
 		ImGui::PopFont();	
 		// ImGui::SetTabItemClosed("Screen");
-		if (tabBegin("Screen", 0, &active_tab)) {
+		if (tabBegin("屏幕", 0, &active_tab)) {
 			bool changed = m_options.pos_changed;
 			childBegin("##w1", true, true);
-			drawCheckbox_m("Fullscreen", m_options.window.fullscreen, "Game will run in windowed mode if unchecked.", fullscreen);
+			drawCheckbox_m("全屏", m_options.window.fullscreen, "如果未选中, 游戏将在窗口模式下运行.", fullscreen);
 			checkChanged(m_options.window.fullscreen != App.window.fullscreen);
 			drawSeparator();
 			ImGui::BeginDisabled(m_options.window.fullscreen);
-				drawCombo_m("Window Size", App.resolutions, "", false, 17, resolutions);
+				drawCombo_m("窗口大小", App.resolutions, "", false, 17, resolutions);
 				checkChanged(App.resolutions.items[App.resolutions.selected].value != m_options.window.size_save);
 				ImGui::Dummy({ 0.0f, 1.0f });
 				ImGui::BeginDisabled(App.resolutions.selected);
-					drawInput2("##ws", "Input custom width & height. (min: 800 x 600)", (glm::ivec2*)(&m_options.window.size_save), { 800, 600 }, { App.desktop_resolution.z, App.desktop_resolution.w });
+					drawInput2("##ws", "输入自定义宽度和高度(最小值: 800x600)", (glm::ivec2*)(&m_options.window.size_save), { 800, 600 }, { App.desktop_resolution.z, App.desktop_resolution.w });
 					checkChanged(!App.resolutions.selected && App.window.size != m_options.window.size_save);
 				ImGui::EndDisabled();
 				drawSeparator();
-				drawCheckbox_m("Hide Titlebar", m_options.window.hide_title_bar, "Hide window title bar.", hide_title_bar);
+				drawCheckbox_m("隐藏标题", m_options.window.hide_title_bar, "隐藏窗口标题栏", hide_title_bar);
 				checkChanged(m_options.window.hide_title_bar != App.window.hide_title_bar);
 				drawSeparator();
-				drawCheckbox_m("Centered Window", m_options.window.centered, "Make window centered to desktop screen.", centered_window);
+				drawCheckbox_m("窗口居中", m_options.window.centered, "在桌面上居中窗口.", centered_window);
 				checkChanged(m_options.window.centered != App.window.centered);
 				ImGui::Dummy({ 0.0f, 2.0f });
 				ImGui::BeginDisabled(m_options.window.centered);
-					drawInput2("##wp", "Window position from top left corner.", &m_options.window.position, { App.desktop_resolution.x, App.desktop_resolution.y }, { App.desktop_resolution.z, App.desktop_resolution.w });
+					drawInput2("##wp", "窗口位置是从左上角开始的", &m_options.window.position, { App.desktop_resolution.x, App.desktop_resolution.y }, { App.desktop_resolution.z, App.desktop_resolution.w });
 					checkChanged(!m_options.window.centered && App.window.position != m_options.window.position);
 				ImGui::EndDisabled();
 			ImGui::EndDisabled();
 			drawSeparator();
-			drawCheckbox_m("Unlock Cursor", m_options.unlock_cursor, "Cursor will not locked within window.", unlock_cursor);
+			drawCheckbox_m("解锁光标", m_options.unlock_cursor, "光标将不会锁定在窗口内", unlock_cursor);
 			checkChanged(m_options.unlock_cursor != App.cursor.unlock);
 			childSeparator("##w2", true);
-			drawCheckbox_m("V-Sync", m_options.vsync, "Vertical Synchronization.", vsync);
+			drawCheckbox_m("V-Sync", m_options.vsync, "垂直同步", vsync);
 			checkChanged(m_options.vsync != App.vsync);
 			drawSeparator();
 			ImGui::BeginDisabled(App.d2fps_mod);
 				ImGui::BeginDisabled(m_options.vsync);
-					drawCheckbox_m("Max Foreground FPS", m_options.foreground_fps.active, "", foreground_fps);
+					drawCheckbox_m("前台最高 FPS", m_options.foreground_fps.active, "", foreground_fps);
 					checkChanged(!m_options.vsync && m_options.foreground_fps.active != App.foreground_fps.active);
 					ImGui::BeginDisabled(!m_options.foreground_fps.active);
-						drawSlider_m(int, "", m_options.foreground_fps.range, "%d", "Max fps when game window is active.", foreground_fps_val);
+						drawSlider_m(int, "", m_options.foreground_fps.range, "%d", "游戏窗口处于活动状态时的最高 FPS", foreground_fps_val);
 						checkChanged(!m_options.vsync && m_options.foreground_fps.active && m_options.foreground_fps.range.value != App.foreground_fps.range.value);
 					ImGui::EndDisabled();
 				ImGui::EndDisabled();
 				drawSeparator();
-				drawCheckbox_m("Max Background FPS", m_options.background_fps.active, "", background_fps);
+				drawCheckbox_m("后台最高 FPS", m_options.background_fps.active, "", background_fps);
 				checkChanged(m_options.background_fps.active != App.background_fps.active);
 				ImGui::BeginDisabled(!m_options.background_fps.active);
-					drawSlider_m(int, "", m_options.background_fps.range, "%d", "Max fps when game window is in inactive.", background_fps_val);
+					drawSlider_m(int, "", m_options.background_fps.range, "%d", "游戏窗口处于非活动状态时的最高 FPS", background_fps_val);
 					checkChanged(m_options.background_fps.active && m_options.background_fps.range.value != App.background_fps.range.value);
 				ImGui::EndDisabled();
 			ImGui::EndDisabled();
 			drawSeparator();
-			drawCheckbox_m("Auto Minimize", m_options.window.auto_minimize, "Auto minimize when lose focus while in fullscreen.", auto_minimize);
+			drawCheckbox_m("自动最小化", m_options.window.auto_minimize, "在全屏模式下失去焦点会自动最小化", auto_minimize);
 			checkChanged(m_options.window.auto_minimize != App.window.auto_minimize);
 			drawSeparator();
-			drawCheckbox_m("Dark Mode", m_options.window.dark_mode, "Dark window title bar. Affect on next launch.", dark_mode);
+			drawCheckbox_m("深色模式", m_options.window.dark_mode, "深色窗口标题栏,设置后在下一次启动的时候会生效", dark_mode);
 			checkChanged(m_options.window.dark_mode != App.window.dark_mode);
 			childEnd();
 			ImGui::BeginDisabled(!changed);
-				if (drawNav("Apply Changes")) {
+				if (drawNav("保存更改")) {
 					if (App.resolutions.selected) {
 						const auto val = App.resolutions.items[App.resolutions.selected].value;
 						m_options.window.size_save = val;
@@ -322,89 +322,89 @@ void Menu::draw()
 			ImGui::EndDisabled();
 			tabEnd();
 		}
-		if (tabBegin("Graphics", 1, &active_tab)) {
-			drawCombo_m("Upscale Shader Preset", App.shader.presets, "", true, 17, shader_preset);
+		if (tabBegin("图像", 1, &active_tab)) {
+			drawCombo_m("高级着色器预设", App.shader.presets, "", true, 17, shader_preset);
 			ImGui::SameLine(0.0f, 4.0f);
 			ImGui::BeginDisabled(App.shader.selected == App.shader.presets.selected);
-				if (drawButton("Apply", { 100.0f, 0.0f }))
+				if (drawButton("应用", { 100.0f, 0.0f }))
 					App.shader.selected = App.shader.presets.selected;
 			ImGui::EndDisabled();
 			drawDescription("RetroArch's slang shader preset files (.slangp).", m_colors[Color::Gray]);
 			childBegin("##w3", true);
 			drawSeparator();
-			drawCheckbox_m("Luma Sharpen", App.sharpen.active, "", sharpen)
+			drawCheckbox_m("光线锐化", App.sharpen.active, "", sharpen)
 				saveBool("Graphic", "sharpen", App.sharpen.active);
 			ImGui::BeginDisabled(!App.sharpen.active);
 				drawSlider_m(float, "", App.sharpen.strength, "%.3f", "", sharpen_strength)
 					saveFloat("Graphic", "sharpen_strength", App.sharpen.strength.value);
-				drawDescription("Strength of the sharpening.", m_colors[Color::Gray], 12);
+				drawDescription("锐化强度", m_colors[Color::Gray], 12);
 				drawSlider_m(float, "", App.sharpen.clamp, "%.3f", "", sharpen_clamp)
 					saveFloat("Graphic", "sharpen_clamp", App.sharpen.clamp.value);
-				drawDescription("Limit maximum amount of sharpening pixel.", m_colors[Color::Gray], 12);
+				drawDescription("限制锐化像素的最大数量", m_colors[Color::Gray], 12);
 				drawSlider_m(float, "", App.sharpen.radius, "%.3f", "", sharpen_radius)
 					saveFloat("Graphic", "sharpen_radius", App.sharpen.radius.value);
-				drawDescription("Radius of the sampling pattern.", m_colors[Color::Gray], 12);
+				drawDescription("采样模型的半径", m_colors[Color::Gray], 12);
 			ImGui::EndDisabled();
 			drawSeparator();
-			drawCheckbox_m("FXAA", App.fxaa.active, "Fast approximate anti-aliasing.", fxaa)
+			drawCheckbox_m("抗锯齿", App.fxaa.active, "快速近似抗锯齿", fxaa)
 				saveBool("Graphic", "fxaa", App.fxaa.active);
 			ImGui::BeginDisabled(!App.fxaa.active);
-				drawCombo_m("", App.fxaa.presets, "FXAA quality presets.", false, 17, fxaa_preset)
+				drawCombo_m("", App.fxaa.presets, "抗锯齿品质预设", false, 17, fxaa_preset)
 					saveInt("Graphic", "fxaa_preset", App.fxaa.presets.selected);
 			ImGui::EndDisabled();
 			childSeparator("##w4");
 			drawSeparator();
 			ImGui::BeginDisabled(!ISGLIDE3X());
-				drawCombo_m("Color Grading", App.lut, "Lookup table (LUT).", false, 17, lut)
+				drawCombo_m("颜色校正", App.lut, "查找表 (LUT)", false, 17, lut)
 					saveInt("Graphic", "lut", App.lut.selected);
 				drawSeparator();
-				drawCheckbox_m("Bloom Effect", App.bloom.active, "", bloom)
+				drawCheckbox_m("光晕效果", App.bloom.active, "", bloom)
 					saveBool("Graphic", "bloom", App.bloom.active);
 				ImGui::BeginDisabled(!App.bloom.active);
 					drawSlider_m(float, "", App.bloom.exposure, "%.3f", "", bloom_exposure)
 						saveFloat("Graphic", "bloom_exposure", App.bloom.exposure.value);
-					drawDescription("Bloom exposure setting.", m_colors[Color::Gray], 12);
+					drawDescription("曝光设置", m_colors[Color::Gray], 12);
 					drawSlider_m(float, "", App.bloom.gamma, "%.3f", "", bloom_gamma)
 						saveFloat("Graphic", "bloom_gamma", App.bloom.gamma.value);
-					drawDescription("Bloom Gamma setting.", m_colors[Color::Gray], 12);
+					drawDescription("伽马设置", m_colors[Color::Gray], 12);
 				ImGui::EndDisabled();
 			ImGui::EndDisabled();
 			drawSeparator();
-			drawLabel("Stretched Viewport", m_colors[Color::Orange]);
-			drawCheckbox_m("Horizontal", App.viewport.stretched.x, "", stretched_horizontal)
+			drawLabel("拉伸视口", m_colors[Color::Orange]);
+			drawCheckbox_m("水平", App.viewport.stretched.x, "", stretched_horizontal)
 			{
 				App.context->getCommandBuffer()->resize();
 				saveBool("Graphic", "stretched_horizontal", App.viewport.stretched.x);
 			}
 			ImGui::SameLine(150.0f);
-			drawCheckbox_m("Vertical", App.viewport.stretched.y, "", stretched_vertical)
+			drawCheckbox_m("垂直", App.viewport.stretched.y, "", stretched_vertical)
 			{
 				App.context->getCommandBuffer()->resize();
 				saveBool("Graphic", "stretched_vertical", App.viewport.stretched.y);
 			}
-			drawDescription("Stretch viewport to window size.", m_colors[Color::Gray], 14);
+			drawDescription("将视口拉伸到窗口大小", m_colors[Color::Gray], 14);
 			childEnd();
 			tabEnd();
 		}
-		if (tabBegin("Features", 2, &active_tab)) {
+		if (tabBegin("功能", 2, &active_tab)) {
 			childBegin("##w5", true);
-			drawCheckbox_m("HD Cursor", App.hd_cursor, "High-definition in game & menu screen cursor.", hd_cursor)
+			drawCheckbox_m("高清光标", App.hd_cursor, "游戏和菜单屏幕光标高清化", hd_cursor)
 				saveBool("Feature", "hd_cursor", App.hd_cursor);
 			drawSeparator();
-			drawCheckbox_m("HD Text", App.hd_text.active, "High-definition ingame texts.", hd_text)
+			drawCheckbox_m("高清字体", App.hd_text.active, "游戏内文字高清化", hd_text)
 			{
 				d2::patch_hd_text->toggle(App.hd_text.active);
 				saveBool("Feature", "hd_text", App.hd_text.active);
 			}
 			ImGui::BeginDisabled(!App.hd_text.active || ISHDTEXT());
-				drawSlider_m(float, "", App.hd_text.scale, "%.3f", "Global scale for HD text.", hd_text_scale)
+				drawSlider_m(float, "", App.hd_text.scale, "%.3f", "全局高清字体缩放", hd_text_scale)
 					saveFloat("Feature", "hd_text_scale", App.hd_text.scale.value);
 				if (App.hd_text.active)
 					modules::HDText::Instance().updateFontSize();
 			ImGui::EndDisabled();
 			drawSeparator();
 			ImGui::BeginDisabled(!ISGLIDE3X() || !App.mini_map.available);
-				drawCheckbox_m("Mini Map", App.mini_map.active, "Always on minimap widget.", mini_map)
+				drawCheckbox_m("小地图", App.mini_map.active, "始终显示在小地图组件上", mini_map)
 				{
 					d2::patch_minimap->toggle(App.mini_map.active);
 					saveBool("Feature", "mini_map", App.mini_map.active);
@@ -413,12 +413,12 @@ void Menu::draw()
 					ImGui::Spacing();
 					ImGui::Spacing();
 					ImGui::SameLine(20.0f);
-					drawCheckbox_m("Text over map", App.mini_map.text_over, "", mini_map_text_over)
+					drawCheckbox_m("文字悬浮", App.mini_map.text_over, "", mini_map_text_over)
 						saveBool("Feature", "mini_map_text_over", App.mini_map.text_over);
 					ImGui::Dummy({ 0.0f, 2.0f });
-					drawSlider_m(int, "", App.mini_map.width, "%d", "Minimap width.", mini_map_width_val)
+					drawSlider_m(int, "", App.mini_map.width, "%d", "小地图宽度", mini_map_width_val)
 						saveInt("Feature", "mini_map_width", App.mini_map.width.value);
-					drawSlider_m(int, "", App.mini_map.height, "%d", "Minimap height.", mini_map_height_val)
+					drawSlider_m(int, "", App.mini_map.height, "%d", "小地图高度", mini_map_height_val)
 						saveInt("Feature", "mini_map_height", App.mini_map.height.value);
 					if (App.mini_map.active)
 						modules::MiniMap::Instance().resize();
@@ -438,26 +438,26 @@ void Menu::draw()
 			ImGui::EndDisabled();*/
 			childSeparator("##w6");
 			ImGui::BeginDisabled(App.d2fps_mod);
-				drawCheckbox_m("Motion Prediction", App.motion_prediction, "D2DX's motion prediction feature.", motion_prediction)
+				drawCheckbox_m("运动预测", App.motion_prediction, "D2DX 的运动预测功能", motion_prediction)
 				{
 					modules::MotionPrediction::Instance().toggle(App.motion_prediction);
 					saveBool("Feature", "motion_prediction", App.motion_prediction);
 				}
 			ImGui::EndDisabled();
 			drawSeparator();
-			drawCheckbox_m("Skip Intro", App.skip_intro, "Auto skip intro videos on launch.", skip_intro)
+			drawCheckbox_m("跳过介绍", App.skip_intro, "启动时自动跳过介绍视频", skip_intro)
 				saveBool("Feature", "skip_intro", App.skip_intro);
 			drawSeparator();
-			drawCheckbox_m("No Pickup", App.no_pickup, "Auto /nopickup option on launch (exclude 1.09d).", no_pickup)
+			drawCheckbox_m("No Pickup", App.no_pickup, "启动时自动运行 /nopickup 选项 (不包括1.09d)", no_pickup)
 				saveBool("Feature", "no_pickup", App.no_pickup);
 			drawSeparator();
-			drawCheckbox_m("Show Monster Resistances", App.show_monster_res, "Show monster resistances on hp bar.", show_monster_res)
+			drawCheckbox_m("显示怪物抗性", App.show_monster_res, "在怪物生命条上显示抗性", show_monster_res)
 				saveBool("Feature", "show_monster_res", App.show_monster_res);
 			drawSeparator();
-			drawCheckbox_m("Show Item Quantity", App.show_item_quantity, "Show item quantity on bottom left corner of icon.", show_item_quantity)
+			drawCheckbox_m("显示物品数量", App.show_item_quantity, "在图标左下角显示商品数量", show_item_quantity)
 				saveBool("Feature", "show_item_quantity", App.show_item_quantity);
 			drawSeparator();
-			drawCheckbox_m("Show FPS", App.show_fps, "FPS Counter on bottom center.", show_fps)
+			drawCheckbox_m("显示 FPS", App.show_fps, "在底部中央显示 FPS 计数器", show_fps)
 				saveBool("Feature", "show_fps", App.show_fps);
 			childEnd();
 			tabEnd();
@@ -525,7 +525,7 @@ void Menu::draw()
 		ImGui::BeginChildFrame(ImGui::GetID("#wiki"), { 300.0f, 24.0f }, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBackground);
 		ImGui::PopStyleVar(3);
 		ImGui::PushFont(m_fonts[15]);
-		if (ImGui::Button(" Open Configuration Wiki Page > "))
+		if (ImGui::Button(" 打开配置 Wiki 页面 >"))
 			ShellExecute(0, 0, L"https://github.com/bayaraa/d2gl/wiki/Configuration", 0, 0, SW_SHOW);
 		ImGui::PopFont();
 		ImGui::EndChildFrame();
