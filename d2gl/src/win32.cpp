@@ -188,7 +188,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 					setCursorLock();
 			} else {
 				App.context->setFpsLimit(App.background_fps.active || fps_capped, App.background_fps.active ? App.background_fps.range.value : App.foreground_fps.range.value);
-				if (App.window.fullscreen && App.window.auto_minimize)
+				if ((App.window.fullscreen || App.window.maximize) && App.window.auto_minimize)
 					PostMessage(hWnd, WM_SYSCOMMAND, SC_MINIMIZE, 0);
 
 				auto cursor_pos = d2::getCursorPos();
