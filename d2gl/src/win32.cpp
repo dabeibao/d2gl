@@ -366,11 +366,22 @@ void setWindowRect()
 		App.window.style |= WS_CAPTION;
 	}
 	if (!App.window.fullscreen) {
-		if (App.window.size.x > (DWORD)screen_w)
+		if (App.window.maximize) {
+			SystemParametersInfo(SPI_GETWORKAREA, 0, &wr, 0);
+			screen_w = wr.right - wr.left;
+			screen_h = wr.bottom - wr.top;
+			App.window.position.x = 0;
+			App.window.position.y = 0;
 			App.window.size.x = screen_w;
-
-		if (App.window.size.y > (DWORD)screen_h)
 			App.window.size.y = screen_h;
+			App.window.centered = true;
+		} else {
+			if (App.window.size.x > (DWORD)screen_w)
+				App.window.size.x = screen_w;
+
+			if (App.window.size.y > (DWORD)screen_h)
+				App.window.size.y = screen_h;
+		}
 
 		int x = App.window.centered ? wr.left + (screen_w / 2) - (App.window.size.x / 2) : App.window.position.x;
 		int y = App.window.centered ? wr.top + (screen_h / 2) - (App.window.size.y / 2) : App.window.position.y;

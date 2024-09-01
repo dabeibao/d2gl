@@ -223,8 +223,16 @@ void Menu::draw()
 			childBegin("##w1", true, true);
 			drawCheckbox_m("全屏", m_options.window.fullscreen, "如果未选中, 游戏将在窗口模式下运行.", fullscreen);
 			checkChanged(m_options.window.fullscreen != App.window.fullscreen);
-			drawSeparator();
 			ImGui::BeginDisabled(m_options.window.fullscreen);
+				drawCheckbox_m("最大化", m_options.window.maximize, "如果选中, 游戏窗口将最大化.", maximize);
+				checkChanged(m_options.window.maximize != App.window.maximize);
+			ImGui::EndDisabled();
+			ImGui::BeginDisabled(m_options.window.fullscreen);
+				drawCheckbox_m("隐藏标题", m_options.window.hide_title_bar, "隐藏窗口标题栏", hide_title_bar);
+				checkChanged(m_options.window.hide_title_bar != App.window.hide_title_bar);
+			ImGui::EndDisabled();
+			drawSeparator();
+			ImGui::BeginDisabled(m_options.window.fullscreen || m_options.window.maximize);
 				drawCombo_m("窗口大小", App.resolutions, "", false, 17, resolutions);
 				checkChanged(App.resolutions.items[App.resolutions.selected].value != m_options.window.size_save);
 				ImGui::Dummy({ 0.0f, 1.0f });
@@ -232,9 +240,6 @@ void Menu::draw()
 					drawInput2("##ws", "输入自定义宽度和高度(最小值: 800x600)", (glm::ivec2*)(&m_options.window.size_save), { 800, 600 }, { App.desktop_resolution.z, App.desktop_resolution.w });
 					checkChanged(!App.resolutions.selected && App.window.size != m_options.window.size_save);
 				ImGui::EndDisabled();
-				drawSeparator();
-				drawCheckbox_m("隐藏标题", m_options.window.hide_title_bar, "隐藏窗口标题栏", hide_title_bar);
-				checkChanged(m_options.window.hide_title_bar != App.window.hide_title_bar);
 				drawSeparator();
 				drawCheckbox_m("窗口居中", m_options.window.centered, "在桌面上居中窗口.", centered_window);
 				checkChanged(m_options.window.centered != App.window.centered);
@@ -244,9 +249,6 @@ void Menu::draw()
 					checkChanged(!m_options.window.centered && App.window.position != m_options.window.position);
 				ImGui::EndDisabled();
 			ImGui::EndDisabled();
-			drawSeparator();
-			drawCheckbox_m("解锁光标", m_options.unlock_cursor, "光标将不会锁定在窗口内", unlock_cursor);
-			checkChanged(m_options.unlock_cursor != App.cursor.unlock);
 			childSeparator("##w2", true);
 			drawCheckbox_m("V-Sync", m_options.vsync, "垂直同步", vsync);
 			checkChanged(m_options.vsync != App.vsync);
@@ -274,6 +276,9 @@ void Menu::draw()
 			drawSeparator();
 			drawCheckbox_m("深色模式", m_options.window.dark_mode, "深色窗口标题栏,设置后在下一次启动的时候会生效", dark_mode);
 			checkChanged(m_options.window.dark_mode != App.window.dark_mode);
+			drawSeparator();
+			drawCheckbox_m("解锁光标", m_options.unlock_cursor, "光标将不会锁定在窗口内", unlock_cursor);
+			checkChanged(m_options.unlock_cursor != App.cursor.unlock);
 			childEnd();
 			ImGui::BeginDisabled(!changed);
 				if (drawNav("保存更改")) {
@@ -282,10 +287,12 @@ void Menu::draw()
 						m_options.window.size_save = val;
 					}
 
-					if (App.window.size != m_options.window.size_save || App.window.fullscreen != m_options.window.fullscreen)
+					if (App.window.size != m_options.window.size_save || App.window.fullscreen != m_options.window.fullscreen ||
+					    App.window.maximize != m_options.window.maximize)
 						window_pos_cond = ImGuiCond_Always;
 
 					App.window.fullscreen = m_options.window.fullscreen;
+					App.window.maximize = m_options.window.maximize;
 					App.window.size = m_options.window.size_save;
 					App.window.size_save = m_options.window.size_save;
 					App.window.hide_title_bar = m_options.window.hide_title_bar;
@@ -299,6 +306,7 @@ void Menu::draw()
 					App.background_fps = m_options.background_fps;
 
 					saveBool("Screen", "fullscreen", App.window.fullscreen);
+					saveBool("Screen", "maximize", App.window.maximize);
 					saveInt("Screen", "window_width", App.window.size.x);
 					saveInt("Screen", "window_height", App.window.size.y);
 					saveBool("Screen", "hide_title_bar", App.window.hide_title_bar);

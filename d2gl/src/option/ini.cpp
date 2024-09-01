@@ -130,6 +130,9 @@ void saveIni()
 		"; Game will run in fullscreen window.\n"
 		"; Window size (window_width/window_height) will be ignored.\n"
 		"fullscreen=%s\n\n"
+		"; Game will run in maximize window.\n"
+		"; Window size (window_width/window_height) will be ignored.\n"
+		"maximize=%s\n\n"
 		"; Window size.\n"
 		"window_width=%d\n"
 		"window_height=%d\n\n"
@@ -161,6 +164,7 @@ void saveIni()
 
 	sprintf_s(buf, screen_setting,
 		boolString(App.window.fullscreen),
+		boolString(App.window.maximize),
 		App.window.size.x,
 		App.window.size.y,
 		boolString(App.window.hide_title_bar),
@@ -310,6 +314,7 @@ void loadIni()
 
 	if (helpers::fileExists(App.ini_file)) {
 		App.window.fullscreen = getBool("Screen", "fullscreen", App.window.fullscreen);
+		App.window.maximize = getBool("Screen", "maximize", App.window.maximize);
 		App.window.auto_minimize = getBool("Screen", "auto_minimize", App.window.auto_minimize);
 		App.window.dark_mode = getBool("Screen", "dark_mode", App.window.dark_mode);
 		App.vsync = getBool("Screen", "vsync", App.vsync);
