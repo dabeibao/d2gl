@@ -19,8 +19,61 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "pch.h"
 #include "glyph_set.h"
 #include "helpers.h"
+#include <log.h>
+#include <memory>
+#include <mutex>
+#include <string>
+#include <sysinfoapi.h>
+#include <thread>
+#include <types.h>
+#include <vector>
 
 namespace d2gl {
+
+class ImageLoader {
+public:
+	ImageLoader() { }
+	~ImageLoader()
+	{
+		for (auto &id: mData) {
+			helpers::clearImage(id);
+		}
+	}
+
+	void loadImage(const std::string& str)
+	{
+		mLock.lock();
+		int index = mData.size();
+		mData.resize(mData.size() + 1);
+		mLock.unlock();
+
+		mThreads.emplace_back(&ImageLoader::loadImageThread, this, index, str);
+	}
+
+	std::vector<ImageData> & finish()
+	{
+		for (auto& t : mThreads) {
+			t.join();
+		}
+
+		return mData;
+	}
+
+private:
+	void loadImageThread(int index, const std::string str)
+	{
+		ImageData imageData = helpers::loadImage(str);
+		mLock.lock();
+		mData[index] = imageData;
+		mLock.unlock();
+	}
+
+
+private:
+	std::mutex mLock;
+	std::vector<ImageData> mData;
+	std::vector<std::thread> mThreads;
+};
 
 GlyphSet::GlyphSet(Texture* texture, const std::string& name, GlyphSet* symbol_set)
 	: m_symbols(symbol_set ? symbol_set->getGlyphes() : nullptr)
@@ -30,21 +83,25 @@ GlyphSet::GlyphSet(Texture* texture, const std::string& name, GlyphSet* symbol_s
 		return;
 
 	int atlas_index = -1;
-	uint32_t start_layer = 0;
 	std::string data((const char*)buffer.data, buffer.size);
 	auto lines = helpers::strToLines(data);
 	delete[] buffer.data;
 
+	uint64_t startTs = GetTickCount64();
+	uint32_t start_layer = -1;
+	ImageLoader loader;
 	for (auto& line : lines) {
 		auto cols = helpers::splitToVector(line);
 
 		auto index = std::atoi(cols[0].c_str());
 		if (atlas_index < index) {
-			auto image_data = helpers::loadImage("assets\\atlases\\" + name + "\\" + cols[0] + ".png");
-			auto tex_data = texture->fillImage(image_data);
-			helpers::clearImage(image_data);
-			start_layer = tex_data.start_layer;
+			loader.loadImage("assets\\atlases\\" + name + "\\" + cols[0] + ".png");
 			atlas_index = index;
+			if (start_layer == -1) {
+				start_layer = texture->getNextLayer();
+			} else {
+				start_layer = start_layer + 1;
+			}
 		}
 
 		wchar_t cc = (wchar_t)std::atoi(cols[1].c_str());
@@ -57,6 +114,14 @@ GlyphSet::GlyphSet(Texture* texture, const std::string& name, GlyphSet* symbol_s
 		m_glyphes[cc].tex_id = start_layer;
 		m_glyphes[cc].tex_coord = coords / 1024.0f;
 	}
+	trace_log("Load glyphes elapsed %lldms", GetTickCount64() - startTs);
+
+	startTs = GetTickCount64();
+	auto & images = loader.finish();
+	for (auto image: images) {
+		texture->fillImage(image);
+	}
+	trace_log("Fill image elapsed %lldms", GetTickCount64() - startTs);
 }
 
 const Glyph* GlyphSet::getGlyph(wchar_t c)
