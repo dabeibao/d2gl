@@ -23,6 +23,7 @@
 #include "modules/mini_map.h"
 #include "modules/motion_prediction.h"
 #include "option/menu.h"
+#include <algorithm>
 
 namespace d2gl::modules {
 
@@ -429,9 +430,10 @@ bool HDText::drawRectangledText(const wchar_t* str, int x, int y, uint32_t rect_
 		line_count = font->getLineCount();
 		font_size = font->getFontSize();
 
-		padding = { 3.4f, glm::max(1.4f, (18.0f - font_size) / 2.0f) };
-		back_pos = { (float)x + 5.0f, (float)y - size.y };
-		back_pos.y -= ((float)(line_count * 18 + 2) - size.y) / 2.0f;
+		//padding = { 3.4f, glm::max(1.4f, (18.0f - font_size) / 2.0f) };
+		padding = { 3.4f, glm::max(1.4f, (18.0f - font_size) / 2.0f)};
+		back_pos = { (float)x, (float)y - size.y - padding.y * 2 };
+		//back_pos.y -= ((float)(line_count * 18 + 2) - size.y) / 2.0f;
 		text_pos = { back_pos.x, back_pos.y + font_size };
 
 		if (rect_transparency == 1)
@@ -551,19 +553,37 @@ uint32_t HDText::getNormalTextWidth(const wchar_t* str, const int n_chars)
 
 uint32_t HDText::getFramedTextSize(const wchar_t* str, uint32_t* width, uint32_t* height)
 {
+#if 0
+	// orig code
+	const auto font = getFont(m_text_size);
+	const auto size = font->getTextSize(str);
+
+	*width = (uint32_t)(size.x + (m_text_size == 1 ? 10 : 0));
+	*height = m_text_size == 1 ? (font->getLineCount() * 18 + 2) : (uint32_t)size.y;
+	m_last_text_width = *width;
+	m_last_text_height = *height;
+
+	return *height;
+#else
+	// In drawRectangledText, it uses 16 to draw on ground items
 	uint32_t text_size = m_text_size == 1? 16 : m_text_size;
 	const auto font = getFont(text_size);
 	const auto size = font->getTextSize(str);
 
-	*width = (uint32_t)(size.x + (text_size == 1 ? 10 : 0));
-	*height = text_size == 1 ? (font->getLineCount() * 18 + 2) : (uint32_t)size.y;
-        if (m_text_size == 1) {
-		*height += (uint32_t)(font->getLineHeight() / 4);
+	// the padding is { 3.4f, 1.4f }, use 10.0f to reserved some space
+	*width = (uint32_t)(size.x + (m_text_size == 1 ? 10.0f : 0));
+	//*height = m_text_size == 1 ? (font->getLineCount() * 18 + 4) : (uint32_t)size.y;
+	if (m_text_size != 1) {
+		*height = (uint32_t)size.y;
+	} else {
+		auto gap = glm::max(5.0f, 18.0f - font->getFontSize()) + 2.0f;
+		*height = (uint32_t)(size.y + gap);
 	}
 	m_last_text_width = *width;
 	m_last_text_height = *height;
 
 	return *height;
+#endif
 }
 
 uint16_t HDText::getFontHeight()
