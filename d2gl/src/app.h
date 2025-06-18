@@ -151,6 +151,7 @@ struct D2GLApp {
 	bool show_item_quantity = false;
 	bool show_monster_res = false;
 	bool show_fps = false;
+	bool menu_scale = true;
 
 	struct {
 		bool active = false;

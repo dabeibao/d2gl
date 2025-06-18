@@ -43,6 +43,7 @@ class Menu {
 	bool m_closing = false;
 	bool m_changed = false;
 	bool m_opt_changed = false;
+	float m_scale = 1.0;
 	std::unordered_map<int, ImFont*> m_fonts;
 	std::unordered_map<Color, ImVec4> m_colors;
 	Options m_options;

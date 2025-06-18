@@ -56,6 +56,7 @@ void dllAttach(HMODULE hmodule)
 	if ((App.api == Api::Glide && !flag_3dfx) || (App.api == Api::DDraw && flag_3dfx))
 		return;
 
+#if 0
 	if (command_line.find("-w ") != std::string::npos || command_line.find("-w") == command_line.length() - 2) {
 		if (App.api == Api::Glide && flag_3dfx) {
 			MessageBoxA(NULL, "D2GL Glide wrapper is not compatible with \"-w\" flag.\nRemove \"-w\" flag and run game again.", "Unsupported argument detected!", MB_OK | MB_ICONWARNING);
@@ -63,6 +64,7 @@ void dllAttach(HMODULE hmodule)
 		}
 		return;
 	}
+#endif
 
 	App.log = command_line.find("-log") != std::string::npos;
 	App.direct = command_line.find("-direct") != std::string::npos;

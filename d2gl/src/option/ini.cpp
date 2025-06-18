@@ -273,6 +273,8 @@ void saveIni()
 		"; Preferred OpenGL Version (must be 3.3 or between 4.0 to 4.6).\n"
 		"gl_ver_major=%d\n"
 		"gl_ver_minor=%d\n\n"
+		"; Enable DPI scale for menu\n"
+		"menu_scale=%s\n\n"
 		"; Use compute shader (enabling this might be better on some gpu).\n"
 		"use_compute_shader=%s\n\n"
 		"; Frame Latency (how many frames cpu generate before rendering).\n"
@@ -286,6 +288,7 @@ void saveIni()
 	sprintf_s(buf, other_setting,
 		App.gl_ver.x,
 		App.gl_ver.y,
+		boolString(App.menu_scale),
 		boolString(App.use_compute_shader),
 		App.frame_latency,
 		App.dlls_early.c_str(),
@@ -374,6 +377,7 @@ void loadIni()
 		App.gl_ver.y = getInt("Other", "gl_ver_minor", App.gl_ver.y, 0, 6);
 		App.gl_ver.y = App.gl_ver.x == 3 ? 3 : App.gl_ver.y;
 
+		App.menu_scale = getBool("Other", "menu_scale", App.menu_scale);
 		App.use_compute_shader = getBool("Other", "use_compute_shader", App.use_compute_shader);
 		App.frame_latency = getInt("Other", "frame_latency", App.frame_latency, 1, 5);
 
