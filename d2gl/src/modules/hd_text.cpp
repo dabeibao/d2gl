@@ -1,4 +1,4 @@
-﻿/*
+/*
 	D2GL: Diablo 2 LoD Glide/DDraw to OpenGL Wrapper.
 	Copyright (C) 2023  Bayaraa
 
@@ -46,9 +46,10 @@ HDText::HDText()
 
 		TextureCreateInfo texture_ci;
 		texture_ci.layer_count = 1;
-		texture_ci.size = { 1024, 1024 };
+		texture_ci.size = { 512, 512 };
 		texture_ci.slot = TEXTURE_SLOT_FONTS;
 		texture_ci.filter = { GL_LINEAR, GL_LINEAR };
+		texture_ci.use_sparse = true;
 
 		static std::unordered_map<std::string, GlyphSet*> glyph_sets;
 		std::vector<std::vector<std::string>> info_list;
@@ -64,9 +65,10 @@ HDText::HDText()
 						auto pos = (buffer2.data + (buffer2.size - 5));
 						while (*pos != '\n' || pos == buffer2.data)
 							pos--;
-						std::string num = std::string((const char*)(pos + 1), 2);
-						helpers::replaceAll(num, ",", "");
-						texture_ci.layer_count += std::atoi(num.c_str()) + 1;
+						auto start = pos + 1;
+						auto end = start;
+						while (*end >= '0' && *end <= '9') end++;
+						texture_ci.layer_count += (uint32_t)std::atoi(std::string(start, end).c_str()) + 1;
 						delete[] buffer2.data;
 					}
 					glyph_sets.insert({ info[1], nullptr });
@@ -75,14 +77,34 @@ HDText::HDText()
 			}
 		}
 
+		for (auto& info : info_list) {
+			auto image = helpers::loadImage("assets\\atlases\\" + info[1] + "\\0.png");
+			if (image.data) {
+				texture_ci.size = { (uint32_t)image.width, (uint32_t)image.width };
+				GlyphSet::setAtlasSize(image.width);
+				helpers::clearImage(image);
+				break;
+			}
+		}
+
 		static std::unique_ptr<Texture> texture = Context::createTexture(texture_ci);
 		static auto symbol_set = new GlyphSet(texture.get(), "NotoSymbol");
+		symbol_set->initLoadPages({ 0 });
+		m_glyph_sets.push_back(symbol_set);
 
 		for (auto& info : info_list) {
 			const auto name = info[1];
-			if (!glyph_sets[name])
+			if (!glyph_sets[name]) {
 				glyph_sets[name] = new GlyphSet(texture.get(), name, symbol_set);
+				m_glyph_sets.push_back(glyph_sets[name]);
+			}
+		}
 
+		for (auto& [name, gs] : glyph_sets)
+			gs->initLoadPages({ 0 });
+
+		for (auto& info : info_list) {
+			const auto name = info[1];
 			uint8_t id = (uint8_t)std::atoi(info[0].c_str());
 			bool bordered = (id == 2 || id == 3 || id == 7 || id == 18);
 			wchar_t color = g_initial_colors.find(id) != g_initial_colors.end() ? g_initial_colors.at(id) : 0;
@@ -139,6 +161,9 @@ void HDText::reset()
 
 void HDText::update()
 {
+	for (auto& gs : m_glyph_sets)
+		gs->pollCompletions(App.context->getCommandBuffer());
+
 	static bool mask = false;
 	if (App.game.screen == GameScreen::Menu) {
 		static glm::vec4 text_mask = glm::vec4(0.0f);

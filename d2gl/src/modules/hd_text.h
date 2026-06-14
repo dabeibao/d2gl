@@ -41,6 +41,7 @@ struct HoveredUnit {
 class HDText {
 	std::map<uint8_t, std::unique_ptr<Font>> m_fonts;
 	std::unique_ptr<Object> m_object_bg;
+	std::vector<GlyphSet*> m_glyph_sets;
 	uint32_t m_lang_id = 0;
 	uint32_t m_text_size = 1;
 	uint32_t m_last_text_height = 0;

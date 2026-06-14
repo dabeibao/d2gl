@@ -409,6 +409,18 @@ ImageData loadImage(const std::string& file_path, bool flipped)
 	return image;
 }
 
+ImageData loadImageFromMemory(const uint8_t* data, size_t size, bool flipped)
+{
+	ImageData image = { 0 };
+
+	if (data && size) {
+		stbi_set_flip_vertically_on_load(flipped);
+		image.data = stbi_load_from_memory(data, (int)size, &image.width, &image.height, &image.bit, 4);
+	}
+
+	return image;
+}
+
 void clearImage(ImageData& image)
 {
 	stbi_image_free(image.data);

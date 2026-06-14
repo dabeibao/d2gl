@@ -32,6 +32,7 @@
     <ClCompile Include="$(MSBuildThisFileDirectory)src\graphic\command_buffer.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\modules\hd_text\glyph_set.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\graphic\upscaler.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\modules\hd_text\page_load_pool.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="$(MSBuildThisFileDirectory)src\app.h" />
@@ -65,6 +66,7 @@
     <ClInclude Include="$(MSBuildThisFileDirectory)src\modules\hd_text\variables.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)src\modules\hd_text\glyph_set.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)src\graphic\upscaler.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)src\modules\hd_text\page_load_pool.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="$(MSBuildThisFileDirectory)src\graphic\shaders\mod.glsl" />

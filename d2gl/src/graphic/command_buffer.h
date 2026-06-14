@@ -2,6 +2,8 @@
 
 namespace d2gl {
 
+class Texture;
+
 enum class CommandType {
 	None,
 	Begin,
@@ -63,6 +65,14 @@ struct HDTextMasking {
 	glm::vec4 metrics;
 };
 
+struct FontPageUpload {
+	uint8_t* pixels = nullptr;
+	uint32_t width = 0;
+	uint32_t height = 0;
+	uint32_t layer = 0;
+	Texture* texture = nullptr;
+};
+
 class CommandBuffer {
 	uint32_t m_count = 0;
 	Command* m_command = nullptr;
@@ -82,6 +92,7 @@ class CommandBuffer {
 	uint8_t* m_tex_buffer = nullptr;
 	GameTexUpdate m_tex_update;
 	HDTextMasking m_hd_text_mask;
+	std::vector<FontPageUpload> m_font_page_uploads;
 
 	friend class Context;
 
@@ -100,6 +111,7 @@ public:
 	void textureUpdate(uint8_t* data, uint16_t tex_num, glm::vec<2, uint16_t> size, glm::vec<2, uint16_t> offset);
 	void gameTextureUpdate(uint8_t* data, glm::vec<2, uint16_t> size, uint32_t bit = 1);
 	void setHDTextMasking(bool masking, glm::vec4 metrics);
+	void pushFontPage(ImageData& image, uint32_t layer, Texture* texture);
 };
 
 }

@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "command_buffer.h"
 #include "d2/common.h"
+#include "helpers.h"
 
 namespace d2gl {
 
@@ -12,6 +13,10 @@ CommandBuffer::CommandBuffer()
 
 CommandBuffer::~CommandBuffer()
 {
+	for (auto& upload : m_font_page_uploads) {
+		ImageData img = { (int)upload.width, (int)upload.height, 4, upload.pixels };
+		helpers::clearImage(img);
+	}
 	delete[] m_tex_buffer;
 }
 
@@ -25,6 +30,12 @@ void CommandBuffer::reset()
 	m_vertex_count = 0;
 	m_vertex_mod_count = 0;
 	m_tex_update.bit = 0;
+
+	for (auto& upload : m_font_page_uploads) {
+		ImageData img = { (int)upload.width, (int)upload.height, 4, upload.pixels };
+		helpers::clearImage(img);
+	}
+	m_font_page_uploads.clear();
 
 	m_screen = App.game.screen;
 	m_window_size = App.window.size;
@@ -99,6 +110,18 @@ void CommandBuffer::setHDTextMasking(bool masking, glm::vec4 metrics)
 	m_hd_text_mask.active = true;
 	m_hd_text_mask.masking = masking;
 	m_hd_text_mask.metrics = metrics;
+}
+
+void CommandBuffer::pushFontPage(ImageData& image, uint32_t layer, Texture* texture)
+{
+	FontPageUpload upload;
+	upload.pixels = image.data;
+	upload.width = image.width;
+	upload.height = image.height;
+	upload.layer = layer;
+	upload.texture = texture;
+	m_font_page_uploads.push_back(upload);
+	image.data = nullptr;
 }
 
 }

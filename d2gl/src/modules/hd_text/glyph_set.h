@@ -18,6 +18,12 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #pragma once
 
+#include <atomic>
+#include <condition_variable>
+#include <mutex>
+#include <string>
+#include <vector>
+
 namespace d2gl {
 
 struct Glyph {
@@ -28,18 +34,49 @@ struct Glyph {
 	glm::vec4 tex_coord = { 0.0f, 0.0f, 0.0f, 0.0f };
 };
 
+enum class PageState : uint8_t { NOT_LOADED, LOADING, LOADED };
+
+struct CompletedPage {
+	int page_index;
+	ImageData image;
+	std::vector<std::pair<wchar_t, Glyph>> glyphs;
+	uint64_t start_ts;
+};
+
 class GlyphSet {
 	std::map<wchar_t, Glyph> m_glyphes;
 	std::map<wchar_t, Glyph>* m_symbols = nullptr;
 	bool m_is_symbol = false;
 
+	std::string m_name;
+	Texture* m_texture = nullptr;
+
+	std::unordered_map<wchar_t, uint8_t> m_glyph_page;
+	std::vector<PageState> m_page_states;
+	std::vector<std::vector<std::pair<wchar_t, Glyph>>> m_page_glyphs;
+	int m_page_count = 0;
+
+	std::mutex m_mutex;
+	std::condition_variable m_destroy_cv;
+	std::vector<CompletedPage> m_completed;
+	std::atomic<int> m_pending_tasks{ 0 };
+
 public:
 	GlyphSet(Texture* texture, const std::string& name, GlyphSet* symbol_set = nullptr);
-	~GlyphSet() = default;
+	~GlyphSet();
 
 	const Glyph* getGlyph(wchar_t c);
 	inline bool isSymbol() { return m_is_symbol; }
 	inline std::map<wchar_t, Glyph>* getGlyphes() { return &m_glyphes; }
+
+	void initLoadPages(const std::vector<int>& pages);
+	void pollCompletions(CommandBuffer* cmd_buf);
+
+	static void setAtlasSize(int size);
+	static int s_atlas_size;
+
+private:
+	void loadPageAsync(int page_index);
 };
 
 }

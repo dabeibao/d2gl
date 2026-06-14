@@ -1,4 +1,4 @@
-﻿/*
+/*
 	D2GL: Diablo 2 LoD Glide/DDraw to OpenGL Wrapper.
 	Copyright (C) 2023  Bayaraa
 
@@ -375,6 +375,13 @@ void Context::renderThread(void* context)
 			}
 			glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
 		}
+
+		for (auto& upload : cmd->m_font_page_uploads) {
+			upload.texture->fill(upload.pixels, upload.width, upload.height, 0, 0, upload.layer);
+			ImageData img = { (int)upload.width, (int)upload.height, 4, upload.pixels };
+			helpers::clearImage(img);
+		}
+		cmd->m_font_page_uploads.clear();
 
 		if (cmd->m_tex_update.bit && ctx->m_game_texture) {
 			glBindBuffer(GL_PIXEL_UNPACK_BUFFER, ctx->m_pixel_buffer);

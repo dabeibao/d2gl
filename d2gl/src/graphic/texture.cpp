@@ -19,6 +19,7 @@
 #include "pch.h"
 #include "texture.h"
 #include "frame_buffer.h"
+#include <log.h>
 
 namespace d2gl {
 
@@ -39,10 +40,18 @@ Texture::Texture(const TextureCreateInfo& info)
 
 	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 
-	if (m_target == GL_TEXTURE_2D)
+	if (info.use_sparse && m_target == GL_TEXTURE_2D_ARRAY && GLEW_ARB_sparse_texture) {
+		m_sparse = true;
+		glTexParameteri(m_target, GL_TEXTURE_SPARSE_ARB, GL_TRUE);
+		glTexStorage3D(m_target, 1, m_internal_format, m_width, m_height, m_layer_count);
+		uint32_t initial = glm::min(2u, m_layer_count);
+		glTexPageCommitmentARB(m_target, 0, 0, 0, 0, m_width, m_height, initial, GL_TRUE);
+		m_committed_layers = initial;
+	} else if (m_target == GL_TEXTURE_2D) {
 		glTexImage2D(m_target, 0, m_internal_format, m_width, m_height, 0, m_format, m_type, 0);
-	else
+	} else {
 		glTexImage3D(m_target, 0, m_internal_format, m_width, m_height, m_layer_count, 0, m_format, m_type, 0);
+	}
 
 	if (info.mip_map)
 		glGenerateMipmap(m_target);
@@ -80,6 +89,9 @@ void Texture::fill(const uint8_t* pixels, uint32_t width, uint32_t height, uint3
 {
 	bind(true);
 
+	if (m_sparse && layer >= m_committed_layers)
+		commitLayer(layer);
+
 	if (m_target == GL_TEXTURE_2D)
 		glTexSubImage2D(m_target, 0, offset_x, offset_y, width, height, m_format, m_type, pixels);
 	else
@@ -95,6 +107,19 @@ void Texture::fillFromBuffer(const std::unique_ptr<FrameBuffer>& fbo, uint32_t i
 
 	bind(true);
 	glCopyTexSubImage2D(m_target, 0, (m_width - width) / 2, (m_height - height) / 2, 0, 0, width, height);
+}
+
+void Texture::commitLayer(uint32_t layer)
+{
+	uint32_t required = layer + 1;
+	if (required > m_layer_count)
+		required = m_layer_count;
+	if (required <= m_committed_layers)
+		return;
+
+	glTexPageCommitmentARB(m_target, 0, 0, 0, m_committed_layers, m_width, m_height, required - m_committed_layers, GL_TRUE);
+	m_committed_layers = required;
+	trace_log("[Texture] Committed layers %u/%u (%.1f%%)", m_committed_layers, m_layer_count, m_committed_layers * 100.0f / m_layer_count);
 }
 
 TextureData Texture::fillImage(ImageData image, uint32_t div_x, uint32_t div_y)
@@ -135,6 +160,12 @@ TextureData Texture::fillImage(ImageData image, uint32_t div_x, uint32_t div_y)
 	}
 
 	return texture_data;
+}
+
+void Texture::fillImages(std::vector<ImageData>& images)
+{
+	for (auto& image : images)
+		fillImage(image);
 }
 
 }

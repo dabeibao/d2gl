@@ -1,4 +1,4 @@
-﻿/*
+/*
 D2GL: Diablo 2 LoD Glide/DDraw to OpenGL Wrapper.
 Copyright (C) 2023  Bayaraa
 
@@ -18,110 +18,98 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "pch.h"
 #include "glyph_set.h"
+#include "graphic/command_buffer.h"
 #include "helpers.h"
 #include <log.h>
-#include <memory>
-#include <mutex>
-#include <string>
 #include <sysinfoapi.h>
-#include <thread>
-#include <types.h>
-#include <vector>
+
+#include "page_load_pool.h"
 
 namespace d2gl {
 
-class ImageLoader {
-public:
-	ImageLoader() { }
-	~ImageLoader()
-	{
-		for (auto &id: mData) {
-			helpers::clearImage(id);
-		}
-	}
+int GlyphSet::s_atlas_size = 512;
 
-	void loadImage(const std::string& str)
-	{
-		mLock.lock();
-		int index = mData.size();
-		mData.resize(mData.size() + 1);
-		mLock.unlock();
+void GlyphSet::setAtlasSize(int size) { s_atlas_size = size; }
 
-		mThreads.emplace_back(&ImageLoader::loadImageThread, this, index, str);
-	}
+static Glyph parseGlyphFromCSV(const std::string& line, wchar_t& out_cc)
+{
+	auto cols = helpers::splitToVector(line);
+	out_cc = (wchar_t)std::atoi(cols[1].c_str());
+	glm::vec4 coords = { std::stof(cols[7]), std::stof(cols[8]), std::stof(cols[9]), std::stof(cols[10]) };
+	glm::vec4 bounds = { std::stof(cols[3]), std::stof(cols[4]), std::stof(cols[5]), std::stof(cols[6]) };
 
-	std::vector<ImageData> & finish()
-	{
-		for (auto& t : mThreads) {
-			t.join();
-		}
-
-		return mData;
-	}
-
-private:
-	void loadImageThread(int index, const std::string str)
-	{
-		ImageData imageData = helpers::loadImage(str);
-		mLock.lock();
-		mData[index] = imageData;
-		mLock.unlock();
-	}
-
-
-private:
-	std::mutex mLock;
-	std::vector<ImageData> mData;
-	std::vector<std::thread> mThreads;
-};
+	Glyph g;
+	g.advance = std::stof(cols[2]) * 32.0f;
+	g.size = { coords.z - coords.x, coords.w - coords.y };
+	g.offset = { bounds.x * 32.0f, -bounds.w * 32.0f };
+	g.tex_coord = coords / (float)GlyphSet::s_atlas_size;
+	return g;
+}
 
 GlyphSet::GlyphSet(Texture* texture, const std::string& name, GlyphSet* symbol_set)
 	: m_symbols(symbol_set ? symbol_set->getGlyphes() : nullptr)
+	, m_name(name)
+	, m_texture(texture)
 {
 	auto buffer = helpers::loadFile("assets\\atlases\\" + name + "\\data.csv");
 	if (!buffer.size)
 		return;
 
-	int atlas_index = -1;
 	std::string data((const char*)buffer.data, buffer.size);
 	auto lines = helpers::strToLines(data);
 	delete[] buffer.data;
 
-	uint64_t startTs = GetTickCount64();
-	uint32_t start_layer = -1;
-	ImageLoader loader;
+	int max_page = -1;
 	for (auto& line : lines) {
 		auto cols = helpers::splitToVector(line);
+		int page = std::atoi(cols[0].c_str());
+		wchar_t cc = (wchar_t)std::atoi(cols[1].c_str());
+		m_glyph_page[cc] = (uint8_t)page;
+		if (page > max_page) max_page = page;
+	}
 
-		auto index = std::atoi(cols[0].c_str());
-		if (atlas_index < index) {
-			loader.loadImage("assets\\atlases\\" + name + "\\" + cols[0] + ".png");
-			atlas_index = index;
-			if (start_layer == -1) {
-				start_layer = texture->getNextLayer();
-			} else {
-				start_layer = start_layer + 1;
-			}
+	if (max_page >= 0) {
+		m_page_count = max_page + 1;
+		m_page_states.resize(m_page_count, PageState::NOT_LOADED);
+		m_page_glyphs.resize(m_page_count);
+
+		for (auto& line : lines) {
+			wchar_t cc;
+			auto g = parseGlyphFromCSV(line, cc);
+			int page = m_glyph_page[cc];
+			m_page_glyphs[page].emplace_back(cc, g);
+		}
+	}
+}
+
+GlyphSet::~GlyphSet()
+{
+	std::unique_lock<std::mutex> lock(m_mutex);
+	m_destroy_cv.wait(lock, [this] { return m_pending_tasks == 0; });
+
+	for (auto& comp : m_completed)
+		helpers::clearImage(comp.image);
+}
+
+void GlyphSet::initLoadPages(const std::vector<int>& pages)
+{
+	for (int page : pages) {
+		if (page < 0 || page >= m_page_count)
+			continue;
+
+		m_page_states[page] = PageState::LOADING;
+
+		auto image = helpers::loadImage("assets\\atlases\\" + m_name + "\\" + std::to_string(page) + ".png");
+		auto tex_data = m_texture->fillImage(image);
+
+		for (auto& [cc, g] : m_page_glyphs[page]) {
+			g.tex_id = (uint16_t)tex_data.start_layer;
+			m_glyphes[cc] = g;
 		}
 
-		wchar_t cc = (wchar_t)std::atoi(cols[1].c_str());
-		glm::vec4 coords = { std::stof(cols[7]), std::stof(cols[8]), std::stof(cols[9]), std::stof(cols[10]) };
-		glm::vec4 bounds = { std::stof(cols[3]), std::stof(cols[4]), std::stof(cols[5]), std::stof(cols[6]) };
-
-		m_glyphes[cc].advance = std::stof(cols[2].c_str()) * 32.0f;
-		m_glyphes[cc].size = { coords.z - coords.x, coords.w - coords.y };
-		m_glyphes[cc].offset = { bounds.x * 32.0f, -bounds.w * 32.0f };
-		m_glyphes[cc].tex_id = start_layer;
-		m_glyphes[cc].tex_coord = coords / 1024.0f;
+		helpers::clearImage(image);
+		m_page_states[page] = PageState::LOADED;
 	}
-	trace_log("Load glyphes elapsed %lldms", GetTickCount64() - startTs);
-
-	startTs = GetTickCount64();
-	auto & images = loader.finish();
-	for (auto image: images) {
-		texture->fillImage(image);
-	}
-	trace_log("Fill image elapsed %lldms", GetTickCount64() - startTs);
 }
 
 const Glyph* GlyphSet::getGlyph(wchar_t c)
@@ -132,6 +120,13 @@ const Glyph* GlyphSet::getGlyph(wchar_t c)
 
 	if (c == L'\xa0')
 		return &m_glyphes[L' '];
+
+	auto it = m_glyph_page.find(c);
+	if (it != m_glyph_page.end()) {
+		int page = it->second;
+		if (m_page_states[page] == PageState::NOT_LOADED)
+			loadPageAsync(page);
+	}
 
 	if (m_symbols) {
 		m_is_symbol = true;
@@ -146,6 +141,79 @@ const Glyph* GlyphSet::getGlyph(wchar_t c)
 		return &m_glyphes[L'?'];
 
 	return nullptr;
+}
+
+void GlyphSet::loadPageAsync(int page_index)
+{
+	{
+		std::lock_guard<std::mutex> lock(m_mutex);
+		if (m_page_states[page_index] != PageState::NOT_LOADED)
+			return;
+		m_page_states[page_index] = PageState::LOADING;
+		m_pending_tasks++;
+	}
+
+	std::string name = m_name;
+	auto glyphs = m_page_glyphs[page_index];
+
+	auto buffer = helpers::loadFile("assets\\atlases\\" + name + "\\" + std::to_string(page_index) + ".png");
+
+	PageLoadPool::instance().submit([this, page_index, name = std::move(name), glyphs = std::move(glyphs), buffer]() mutable {
+		uint64_t start_ts = GetTickCount64();
+
+		auto image = helpers::loadImageFromMemory(buffer.data, buffer.size);
+		delete[] buffer.data;
+
+		if (!image.data) {
+			{
+				std::lock_guard<std::mutex> lock(m_mutex);
+				m_page_states[page_index] = PageState::NOT_LOADED;
+			}
+			m_pending_tasks--;
+			m_destroy_cv.notify_one();
+			return;
+		}
+
+		CompletedPage completed;
+		completed.page_index = page_index;
+		completed.image = image;
+		completed.start_ts = start_ts;
+
+		for (auto& [cc, g] : glyphs)
+			completed.glyphs.emplace_back(cc, g);
+
+		{
+			std::lock_guard<std::mutex> lock(m_mutex);
+			m_completed.push_back(std::move(completed));
+		}
+
+		m_pending_tasks--;
+		m_destroy_cv.notify_one();
+	});
+}
+
+void GlyphSet::pollCompletions(CommandBuffer* cmd_buf)
+{
+	std::vector<CompletedPage> pages;
+	{
+		std::lock_guard<std::mutex> lock(m_mutex);
+		pages.swap(m_completed);
+	}
+
+	for (auto& comp : pages) {
+		uint32_t layer = m_texture->advanceNextLayer();
+
+		for (auto& [cc, glyph] : comp.glyphs) {
+			glyph.tex_id = (uint16_t)layer;
+			m_glyphes[cc] = glyph;
+		}
+
+		trace_log("[HDText] Lazy-load page %d (%zu glyphs) took %lldms",
+			comp.page_index, comp.glyphs.size(), GetTickCount64() - comp.start_ts);
+
+		cmd_buf->pushFontPage(comp.image, layer, m_texture);
+		m_page_states[comp.page_index] = PageState::LOADED;
+	}
 }
 
 }
