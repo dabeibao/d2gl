@@ -27,7 +27,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 namespace d2gl {
 
-int GlyphSet::s_atlas_size = 512;
+int GlyphSet::s_atlas_size = 1024;
 
 void GlyphSet::setAtlasSize(int size) { s_atlas_size = size; }
 
@@ -165,10 +165,7 @@ void GlyphSet::loadPageAsync(int page_index)
 		delete[] buffer.data;
 
 		if (!image.data) {
-			{
-				std::lock_guard<std::mutex> lock(m_mutex);
-				m_page_states[page_index] = PageState::NOT_LOADED;
-			}
+			trace_log("[HDText] Lazy-load page %d failed", page_index);
 			m_pending_tasks--;
 			m_destroy_cv.notify_one();
 			return;
@@ -208,8 +205,10 @@ void GlyphSet::pollCompletions(CommandBuffer* cmd_buf)
 			m_glyphes[cc] = glyph;
 		}
 
-		trace_log("[HDText] Lazy-load page %d (%zu glyphs) took %lldms",
-			comp.page_index, comp.glyphs.size(), GetTickCount64() - comp.start_ts);
+		trace_log("[HDText] Lazy-load page %d (%zu glyphs) took %lldms [%d/%d %.1f%]",
+			comp.page_index, comp.glyphs.size(), GetTickCount64() - comp.start_ts,
+			layer + 1, m_texture->getLayerCount(),
+			(layer + 1) * 100.0f / m_texture->getLayerCount());
 
 		cmd_buf->pushFontPage(comp.image, layer, m_texture);
 		m_page_states[comp.page_index] = PageState::LOADED;

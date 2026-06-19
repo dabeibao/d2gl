@@ -46,7 +46,7 @@ HDText::HDText()
 
 		TextureCreateInfo texture_ci;
 		texture_ci.layer_count = 1;
-		texture_ci.size = { 512, 512 };
+		texture_ci.size = { 1024, 1024 };
 		texture_ci.slot = TEXTURE_SLOT_FONTS;
 		texture_ci.filter = { GL_LINEAR, GL_LINEAR };
 		texture_ci.use_sparse = true;
@@ -77,6 +77,9 @@ HDText::HDText()
 			}
 		}
 
+		#if 0
+		// TODO: so far as the symbol is hard-coded to 1024x1024, we cannot use 512x512; otherwises the symbol
+		// has more than 1 page.
 		for (auto& info : info_list) {
 			auto image = helpers::loadImage("assets\\atlases\\" + info[1] + "\\0.png");
 			if (image.data) {
@@ -86,6 +89,7 @@ HDText::HDText()
 				break;
 			}
 		}
+		#endif
 
 		static std::unique_ptr<Texture> texture = Context::createTexture(texture_ci);
 		static auto symbol_set = new GlyphSet(texture.get(), "NotoSymbol");

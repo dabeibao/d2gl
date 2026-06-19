@@ -44,9 +44,8 @@ Texture::Texture(const TextureCreateInfo& info)
 		m_sparse = true;
 		glTexParameteri(m_target, GL_TEXTURE_SPARSE_ARB, GL_TRUE);
 		glTexStorage3D(m_target, 1, m_internal_format, m_width, m_height, m_layer_count);
-		uint32_t initial = glm::min(2u, m_layer_count);
-		glTexPageCommitmentARB(m_target, 0, 0, 0, 0, m_width, m_height, initial, GL_TRUE);
-		m_committed_layers = initial;
+		glTexPageCommitmentARB(m_target, 0, 0, 0, 0, m_width, m_height, 2, GL_TRUE);
+		m_committed_layers = 2;
 	} else if (m_target == GL_TEXTURE_2D) {
 		glTexImage2D(m_target, 0, m_internal_format, m_width, m_height, 0, m_format, m_type, 0);
 	} else {
@@ -87,6 +86,11 @@ void Texture::bindImage(uint32_t unit)
 
 void Texture::fill(const uint8_t* pixels, uint32_t width, uint32_t height, uint32_t offset_x, uint32_t offset_y, uint32_t layer)
 {
+	if (layer >= m_layer_count) {
+		error_log("[Texture] fill layer %u out of bounds (max: %u)", layer, m_layer_count - 1);
+		return;
+	}
+
 	bind(true);
 
 	if (m_sparse && layer >= m_committed_layers)
