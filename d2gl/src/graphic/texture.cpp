@@ -139,14 +139,14 @@ TextureData Texture::fillImage(ImageData image, uint32_t div_x, uint32_t div_y)
 			fill(image.data, image.width, image.height);
 		else {
 			fill(image.data, image.width, image.height, 0, 0, m_next_layer);
-			m_next_layer++;
+			advanceNextLayer();
 		}
 	} else {
 		if (div_x == 1) {
 			for (size_t y = 0; y < div_y; y++) {
 				int offset_buffer = y * height * image.width;
 				fill(image.data + offset_buffer * m_channel, width, height, 0, 0, m_next_layer);
-				m_next_layer++;
+				advanceNextLayer();
 			}
 		} else {
 			uint8_t* pixels = new uint8_t[width * height * m_channel];
@@ -157,7 +157,7 @@ TextureData Texture::fillImage(ImageData image, uint32_t div_x, uint32_t div_y)
 					std::memcpy(pixels + offset_pixel * m_channel, image.data + offset_buffer * m_channel, width * m_channel);
 				}
 				fill(pixels, width, height, 0, 0, m_next_layer);
-				m_next_layer++;
+				advanceNextLayer();
 			}
 			delete[] pixels;
 		}

@@ -27,9 +27,22 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 namespace d2gl {
 
+const int GlyphSet::s_texture_size = 1024;
 int GlyphSet::s_atlas_size = 1024;
+int GlyphSet::s_index_per_row = 1;
 
-void GlyphSet::setAtlasSize(int size) { s_atlas_size = size; }
+void GlyphSet::setAtlasSize(int size)
+{
+	s_atlas_size = size;
+	s_index_per_row = 1024 / size;
+}
+
+int GlyphSet::getLayerCount(int png)
+{
+	auto div = s_texture_size / s_atlas_size;
+	auto pngs_per_layer = div * div;
+	return (png + pngs_per_layer - 1) / pngs_per_layer;
+}
 
 static Glyph parseGlyphFromCSV(const std::string& line, wchar_t& out_cc)
 {
@@ -42,7 +55,7 @@ static Glyph parseGlyphFromCSV(const std::string& line, wchar_t& out_cc)
 	g.advance = std::stof(cols[2]) * 32.0f;
 	g.size = { coords.z - coords.x, coords.w - coords.y };
 	g.offset = { bounds.x * 32.0f, -bounds.w * 32.0f };
-	g.tex_coord = coords / (float)GlyphSet::s_atlas_size;
+	g.tex_coord = coords / (float)GlyphSet::s_texture_size;
 	return g;
 }
 
@@ -156,10 +169,12 @@ void GlyphSet::loadPageAsync(int page_index)
 	std::string name = m_name;
 	auto glyphs = m_page_glyphs[page_index];
 
-	auto buffer = helpers::loadFile("assets\\atlases\\" + name + "\\" + std::to_string(page_index) + ".png");
+	PageLoadPool::instance().submit([this, page_index, name = std::move(name), glyphs = std::move(glyphs)]() mutable {
 
-	PageLoadPool::instance().submit([this, page_index, name = std::move(name), glyphs = std::move(glyphs), buffer]() mutable {
 		uint64_t start_ts = GetTickCount64();
+
+		auto buffer = helpers::loadFile("assets\\atlases\\" + name + "\\" + std::to_string(page_index) + ".png");
+
 
 		auto image = helpers::loadImageFromMemory(buffer.data, buffer.size);
 		delete[] buffer.data;
@@ -198,19 +213,30 @@ void GlyphSet::pollCompletions(CommandBuffer* cmd_buf)
 	}
 
 	for (auto& comp : pages) {
-		uint32_t layer = m_texture->advanceNextLayer();
+		auto idx = m_texture->advanceNextIndex();
+		auto layer = idx.layer;
+		auto index = idx.index;
+
+		auto x_offset = (index % s_index_per_row) * s_atlas_size;
+		auto y_offset = (index / s_index_per_row) * s_atlas_size;
+		auto x_coord_offset = x_offset * 1.0f / s_texture_size;
+		auto y_coord_offset = y_offset * 1.0f / s_texture_size;
 
 		for (auto& [cc, glyph] : comp.glyphs) {
 			glyph.tex_id = (uint16_t)layer;
+			glyph.tex_coord.x += x_coord_offset;
+			glyph.tex_coord.y += y_coord_offset;
+			glyph.tex_coord.z += x_coord_offset;
+			glyph.tex_coord.w += y_coord_offset;
 			m_glyphes[cc] = glyph;
 		}
 
-		trace_log("[HDText] Lazy-load page %d (%zu glyphs) took %lldms [%d/%d %.1f%]",
+		trace_log("[HDText] page %d (%zu glyphs) took %lldms [%d.%d/%d %.1f%%]",
 			comp.page_index, comp.glyphs.size(), GetTickCount64() - comp.start_ts,
-			layer + 1, m_texture->getLayerCount(),
+			layer, index, m_texture->getLayerCount(),
 			(layer + 1) * 100.0f / m_texture->getLayerCount());
 
-		cmd_buf->pushFontPage(comp.image, layer, m_texture);
+		cmd_buf->pushFontPage(comp.image, layer, m_texture, x_offset, y_offset);
 		m_page_states[comp.page_index] = PageState::LOADED;
 	}
 }

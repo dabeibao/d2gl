@@ -112,10 +112,12 @@ void CommandBuffer::setHDTextMasking(bool masking, glm::vec4 metrics)
 	m_hd_text_mask.metrics = metrics;
 }
 
-void CommandBuffer::pushFontPage(ImageData& image, uint32_t layer, Texture* texture)
+void CommandBuffer::pushFontPage(ImageData& image, uint32_t layer, Texture* texture, uint32_t x, uint32_t y)
 {
 	FontPageUpload upload;
 	upload.pixels = image.data;
+	upload.x = x;
+	upload.y = y;
 	upload.width = image.width;
 	upload.height = image.height;
 	upload.layer = layer;

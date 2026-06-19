@@ -421,6 +421,18 @@ ImageData loadImageFromMemory(const uint8_t* data, size_t size, bool flipped)
 	return image;
 }
 
+bool imageInfo(const std::string& file_path, int * x, int * y)
+{
+	auto buffer = loadFile(file_path);
+	if (buffer.size) {
+		int ret = stbi_info_from_memory(buffer.data, buffer.size, x, y, nullptr);
+		delete[] buffer.data;
+		return ret != 0? true : false;
+	}
+
+	return false;
+}
+
 void clearImage(ImageData& image)
 {
 	stbi_image_free(image.data);

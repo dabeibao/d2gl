@@ -70,13 +70,16 @@ public:
 	inline std::map<wchar_t, Glyph>* getGlyphes() { return &m_glyphes; }
 
 	void initLoadPages(const std::vector<int>& pages);
+	void loadPageAsync(int page_index);
 	void pollCompletions(CommandBuffer* cmd_buf);
 
 	static void setAtlasSize(int size);
+	static int getLayerCount(int png);
+	static const int s_texture_size;
 	static int s_atlas_size;
+	static int s_index_per_row;
 
 private:
-	void loadPageAsync(int page_index);
 };
 
 }

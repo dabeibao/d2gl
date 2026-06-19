@@ -72,6 +72,8 @@ BufferData loadFile(const std::string& file_path);
 ImageData loadImage(const std::string& file_path, bool flipped = true);
 ImageData loadImageFromMemory(const uint8_t* data, size_t size, bool flipped = true);
 void clearImage(ImageData& image);
+bool imageInfo(const std::string& file_path, int * x, int * y);
+
 std::string saveScreenShot(uint8_t* data, int width, int height);
 
 void loadDlls(const std::string& dlls, bool late = false);

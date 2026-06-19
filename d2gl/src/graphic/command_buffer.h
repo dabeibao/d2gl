@@ -67,6 +67,8 @@ struct HDTextMasking {
 
 struct FontPageUpload {
 	uint8_t* pixels = nullptr;
+	uint32_t x = 0;
+	uint32_t y = 0;
 	uint32_t width = 0;
 	uint32_t height = 0;
 	uint32_t layer = 0;
@@ -111,7 +113,7 @@ public:
 	void textureUpdate(uint8_t* data, uint16_t tex_num, glm::vec<2, uint16_t> size, glm::vec<2, uint16_t> offset);
 	void gameTextureUpdate(uint8_t* data, glm::vec<2, uint16_t> size, uint32_t bit = 1);
 	void setHDTextMasking(bool masking, glm::vec4 metrics);
-	void pushFontPage(ImageData& image, uint32_t layer, Texture* texture);
+	void pushFontPage(ImageData& image, uint32_t layer, Texture* texture, uint32_t x, uint32_t y);
 };
 
 }

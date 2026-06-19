@@ -44,15 +44,17 @@ HDText::HDText()
 		auto lines = helpers::strToLines(data);
 		delete[] buffer.data;
 
+		const int default_size = GlyphSet::s_texture_size;
 		TextureCreateInfo texture_ci;
 		texture_ci.layer_count = 1;
-		texture_ci.size = { 1024, 1024 };
+		texture_ci.size = { default_size, default_size };
 		texture_ci.slot = TEXTURE_SLOT_FONTS;
 		texture_ci.filter = { GL_LINEAR, GL_LINEAR };
 		texture_ci.use_sparse = true;
 
 		static std::unordered_map<std::string, GlyphSet*> glyph_sets;
 		std::vector<std::vector<std::string>> info_list;
+		uint32_t png_files = 0;
 		for (auto& line : lines) {
 			helpers::replaceAll(line, " ", "");
 			helpers::replaceAll(line, "\r", "");
@@ -68,7 +70,7 @@ HDText::HDText()
 						auto start = pos + 1;
 						auto end = start;
 						while (*end >= '0' && *end <= '9') end++;
-						texture_ci.layer_count += (uint32_t)std::atoi(std::string(start, end).c_str()) + 1;
+						png_files += (uint32_t)std::atoi(std::string(start, end).c_str()) + 1;
 						delete[] buffer2.data;
 					}
 					glyph_sets.insert({ info[1], nullptr });
@@ -77,21 +79,25 @@ HDText::HDText()
 			}
 		}
 
-		#if 0
-		// TODO: so far as the symbol is hard-coded to 1024x1024, we cannot use 512x512; otherwises the symbol
-		// has more than 1 page.
 		for (auto& info : info_list) {
-			auto image = helpers::loadImage("assets\\atlases\\" + info[1] + "\\0.png");
-			if (image.data) {
-				texture_ci.size = { (uint32_t)image.width, (uint32_t)image.width };
-				GlyphSet::setAtlasSize(image.width);
-				helpers::clearImage(image);
+			int x, y;
+			auto ok = helpers::imageInfo("assets\\atlases\\" + info[1] + "\\0.png", &x, &y);
+			if (!ok) {
+				continue;
+			}
+			if (x != y || x == 0 || (default_size % x) != 0) {
+				trace_log("[HDText] unsupport size (%d, %d)", x, y);
 				break;
 			}
+			GlyphSet::setAtlasSize(x);
+			break;
 		}
-		#endif
+
+		texture_ci.layer_count += GlyphSet::getLayerCount(png_files);
 
 		static std::unique_ptr<Texture> texture = Context::createTexture(texture_ci);
+		texture->set_sub_index_size(GlyphSet::s_atlas_size);
+
 		static auto symbol_set = new GlyphSet(texture.get(), "NotoSymbol");
 		symbol_set->initLoadPages({ 0 });
 		m_glyph_sets.push_back(symbol_set);
@@ -103,9 +109,6 @@ HDText::HDText()
 				m_glyph_sets.push_back(glyph_sets[name]);
 			}
 		}
-
-		for (auto& [name, gs] : glyph_sets)
-			gs->initLoadPages({ 0 });
 
 		for (auto& info : info_list) {
 			const auto name = info[1];
@@ -125,6 +128,10 @@ HDText::HDText()
 			}
 			g_options_texts = g_options_text_others.at(m_lang_id);
 			g_death_texts = g_death_text_others.at(m_lang_id);
+		}
+
+		for (auto& [name, gs] : glyph_sets) {
+			gs->loadPageAsync(0);
 		}
 	}
 

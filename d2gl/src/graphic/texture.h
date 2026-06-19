@@ -47,10 +47,17 @@ class Texture {
 	GLenum m_format, m_target, m_type;
 	uint32_t m_width, m_height, m_channel, m_layer_count, m_slot;
 	uint32_t m_next_layer = 0;
+	uint32_t m_next_layer_index = 0;
+	uint32_t m_index_count = 1;
 	bool m_sparse = false;
 	uint32_t m_committed_layers = 0;
 
 public:
+	struct LayerIndex {
+		uint32_t layer;
+		uint32_t index;
+	};
+
 	Texture(const TextureCreateInfo& info);
 	~Texture();
 
@@ -67,9 +74,27 @@ public:
 	inline const uint32_t getWidth() const { return m_width; }
 	inline const uint32_t getHeight() const { return m_height; }
 	inline const uint32_t getNextLayer() const { return m_next_layer; }
-	inline uint32_t advanceNextLayer() { return m_next_layer++; }
+	inline void advanceNextLayer() { m_next_layer++; }
 	inline uint32_t getCommittedLayers() const { return m_committed_layers; }
 	inline uint32_t getLayerCount() const { return m_layer_count; }
+	inline uint32_t getLayerIndexCount() const { return m_index_count; }
+
+	inline LayerIndex advanceNextIndex()
+	{
+		LayerIndex idx = { m_next_layer, m_next_layer_index};
+		m_next_layer_index++;
+		if (m_next_layer_index >= m_index_count) {
+			m_next_layer++;
+			m_next_layer_index = 0;
+		}
+		return idx;
+	}
+
+	inline void set_sub_index_size(int width)
+	{
+		auto div = m_width / width;
+		m_index_count = div * div;
+	}
 
 private:
 	void commitLayer(uint32_t layer);

@@ -377,7 +377,7 @@ void Context::renderThread(void* context)
 		}
 
 		for (auto& upload : cmd->m_font_page_uploads) {
-			upload.texture->fill(upload.pixels, upload.width, upload.height, 0, 0, upload.layer);
+			upload.texture->fill(upload.pixels, upload.width, upload.height, upload.x, upload.y, upload.layer);
 			ImageData img = { (int)upload.width, (int)upload.height, 4, upload.pixels };
 			helpers::clearImage(img);
 		}
