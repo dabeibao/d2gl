@@ -17,10 +17,54 @@
 */
 
 #include "pch.h"
+#include <mutex>
 
 namespace d2gl {
 
-FILE* log_file = nullptr;
+static std::mutex g_log_mutex;
+static FILE * log_fp;
+
+FILE * logFileOpen()
+{
+	if (log_fp != nullptr) {
+		return log_fp;
+	}
+	FILE * fp;
+	if (fopen_s(&fp, App.log_file.c_str(), "w") != 0)  {
+		return nullptr;
+	}
+	log_fp = fp;
+	return fp;
+}
+
+void logToFile(int type, const char *fmt, va_list args)
+{
+	std::lock_guard<std::mutex> lock(g_log_mutex);
+
+	FILE * fp = logFileOpen();
+	if (fp == nullptr) {
+		return;
+	}
+
+	time_t now = time(0);
+	tm gmt_time;
+	localtime_s(&gmt_time, &now);
+	fprintf(fp, "[%.2d:%.2d:%.2d][%s] ",
+		gmt_time.tm_hour, gmt_time.tm_min, gmt_time.tm_sec,
+		(type == 0 ? "INFO" : (type == 1 ? "ERROR" : "WARNING")));
+	vfprintf(fp, fmt, args);
+	fprintf(fp, "\n");
+	fflush(fp);
+}
+
+void logToFile(int type, const char *fmt, ...)
+{
+	va_list args;
+	va_start(args, fmt);
+	logToFile(type, fmt, args);
+	va_end(args);
+}
+
 
 void logInit()
 {
@@ -28,15 +72,13 @@ void logInit()
 	AllocConsole();
 	freopen_s((FILE**)stdout, "CONOUT$", "w", stdout);
 #endif
-
-	if (App.log && logFileOpen("w") && log_file) {
-		time_t now = time(0);
-		tm gmt_time;
-		localtime_s(&gmt_time, &now);
-		fprintf(log_file, "== D2GL v%s logging started. (%d/%d/%d) ==\n\n", App.version_str.c_str(), gmt_time.tm_year + 1900, gmt_time.tm_mon + 1, gmt_time.tm_mday);
-		logFileClose();
+	if (!App.log) {
+		return;
 	}
+
+	logToFile(0, "== D2GL v%s logging started. ==\n", App.version_str.c_str());
 }
+
 
 void logTrace(WORD color, bool newline, const char* format, ...)
 {
@@ -71,32 +113,17 @@ void logTraceDef(uint8_t type, const char* format, ...)
 	printf("\n");
 }
 
-bool logFileOpen(const char* mode)
-{
-	return fopen_s(&log_file, App.log_file.c_str(), mode) == 0;
-}
-
 void logFileWrite(uint8_t type, const char* format, ...)
 {
-	if (App.log && logFileOpen("a") && log_file) {
-		time_t now = time(0);
-		tm gmt_time;
-		localtime_s(&gmt_time, &now);
-		fprintf(log_file, "[%.2d:%.2d:%.2d][%s] ", gmt_time.tm_hour, gmt_time.tm_min, gmt_time.tm_sec, (type == 0 ? "INFO" : (type == 1 ? "ERROR" : "WARNING")));
-
-		va_list args;
-		va_start(args, format);
-		vfprintf(log_file, format, args);
-		va_end(args);
-		fprintf(log_file, "\n");
-		logFileClose();
+	if (!App.log) {
+		return;
 	}
+
+	va_list args;
+	va_start(args, format);
+	logToFile(type, format, args);
+	va_end(args);
 }
 
-void logFileClose()
-{
-	fclose(log_file);
-	log_file = nullptr;
-}
 
 }
