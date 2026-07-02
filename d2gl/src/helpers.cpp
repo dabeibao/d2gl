@@ -489,7 +489,7 @@ void loadDlls(const std::string& dlls, bool late)
 						log_str += " and " + segments[1] + " " + segments[2] + " function called";
 				}
 				trace_log("%s.", log_str.c_str());
-				if (!late && dll == "d2fps.dll:stdcall:_Init@0") {
+				if (!late && dll.find("d2fps.dll:stdcall:_Init@0") != std::string::npos) {
 					App.d2fps_mod = true;
 					App.foreground_fps.active = false;
 					App.background_fps.active = false;
