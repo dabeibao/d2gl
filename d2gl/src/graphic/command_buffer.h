@@ -65,6 +65,13 @@ struct HDTextMasking {
 	glm::vec4 metrics;
 };
 
+struct ExternalTexUpload {
+	uint8_t* pixels = nullptr;
+	uint32_t width = 0;
+	uint32_t height = 0;
+	uint32_t layer = 0;
+};
+
 struct FontPageUpload {
 	uint8_t* pixels = nullptr;
 	uint32_t x = 0;
@@ -95,6 +102,7 @@ class CommandBuffer {
 	GameTexUpdate m_tex_update;
 	HDTextMasking m_hd_text_mask;
 	std::vector<FontPageUpload> m_font_page_uploads;
+	std::vector<ExternalTexUpload> m_external_tex_uploads;
 
 	friend class Context;
 

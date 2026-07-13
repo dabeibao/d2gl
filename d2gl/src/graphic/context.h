@@ -50,6 +50,7 @@ namespace d2gl {
 #define TEXTURE_SLOT_FONTS 13
 #define TEXTURE_SLOT_MASK 14
 #define TEXTURE_SLOT_MAP 15
+#define TEXTURE_SLOT_EXTERNAL 16
 
 #define IMAGE_UNIT_BLUR 0
 #define IMAGE_UNIT_FXAA 1
@@ -164,6 +165,8 @@ class Context {
 	std::unique_ptr<Pipeline> m_prefx_pipeline;
 
 public:
+	std::unique_ptr<Texture> m_external_texture;
+
 	Context();
 	~Context();
 
@@ -211,6 +214,7 @@ public:
 	void toggleVsync();
 	void setFpsLimit(bool active, int max_fps);
 	void takeScreenShot();
+	void queueExternalTexUpload(uint32_t layer, const uint8_t* pixels, uint32_t width, uint32_t height);
 
 	void imguiStartFrame();
 	void imguiRender();

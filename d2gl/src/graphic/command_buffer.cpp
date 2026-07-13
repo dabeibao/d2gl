@@ -17,6 +17,8 @@ CommandBuffer::~CommandBuffer()
 		ImageData img = { (int)upload.width, (int)upload.height, 4, upload.pixels };
 		helpers::clearImage(img);
 	}
+	for (auto& upload : m_external_tex_uploads)
+		delete[] upload.pixels;
 	delete[] m_tex_buffer;
 }
 
@@ -36,6 +38,10 @@ void CommandBuffer::reset()
 		helpers::clearImage(img);
 	}
 	m_font_page_uploads.clear();
+
+	for (auto& upload : m_external_tex_uploads)
+		delete[] upload.pixels;
+	m_external_tex_uploads.clear();
 
 	m_screen = App.game.screen;
 	m_window_size = App.window.size;

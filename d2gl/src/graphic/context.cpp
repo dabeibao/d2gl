@@ -202,6 +202,7 @@ Context::Context()
 	mod_pipeline_ci.bindings = {
 		{ BindingType::Texture, "u_CursorTexture", TEXTURE_SLOT_CURSOR },
 		{ BindingType::Texture, "u_FontTexture", TEXTURE_SLOT_FONTS },
+		{ BindingType::Texture, "u_ExternalTexture", TEXTURE_SLOT_EXTERNAL },
 	};
 	if (ISGLIDE3X()) {
 		mod_pipeline_ci.bindings.push_back({ BindingType::FBTexture, "u_MapTexture", TEXTURE_SLOT_MAP, &m_game_framebuffer, 1 });
@@ -294,6 +295,14 @@ Context::Context()
 		m_game_pipeline->setUniformMat4f("u_MVP", glm::ortho(-1.0f, 1.0f, 1.0f, -1.0f));
 	}
 
+	TextureCreateInfo external_tex_ci;
+	external_tex_ci.size = { 512, 512 };
+	external_tex_ci.layer_count = 128;
+	external_tex_ci.slot = TEXTURE_SLOT_EXTERNAL;
+	external_tex_ci.filter = { GL_LINEAR, GL_LINEAR };
+	external_tex_ci.use_sparse = true;
+	m_external_texture = Context::createTexture(external_tex_ci);
+
 	onResize(App.window.size, App.game.size);
 
 	LARGE_INTEGER qpf;
@@ -382,6 +391,13 @@ void Context::renderThread(void* context)
 			helpers::clearImage(img);
 		}
 		cmd->m_font_page_uploads.clear();
+
+		for (auto& upload : cmd->m_external_tex_uploads) {
+			ctx->m_external_texture->fill(upload.pixels, upload.width, upload.height, 0, 0, upload.layer);
+			delete[] upload.pixels;
+			upload.pixels = nullptr;
+		}
+		cmd->m_external_tex_uploads.clear();
 
 		if (cmd->m_tex_update.bit && ctx->m_game_texture) {
 			glBindBuffer(GL_PIXEL_UNPACK_BUFFER, ctx->m_pixel_buffer);
@@ -884,6 +900,18 @@ void Context::appendDelayedObjects()
 	m_delay_push = false;
 	m_vertices_late.count = 0;
 	m_vertices_late.ptr = m_vertices_late.data[0].data();
+}
+
+void Context::queueExternalTexUpload(uint32_t layer, const uint8_t* pixels, uint32_t width, uint32_t height)
+{
+	auto& cmd = m_command_buffer[m_frame_index];
+	ExternalTexUpload upload;
+	upload.pixels = new uint8_t[width * height * 4];
+	memcpy(upload.pixels, pixels, width * height * 4);
+	upload.width = width;
+	upload.height = height;
+	upload.layer = layer;
+	cmd.m_external_tex_uploads.push_back(upload);
 }
 
 void Context::toggleVsync()
