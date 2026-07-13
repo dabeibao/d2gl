@@ -155,6 +155,11 @@ Context::Context()
 	glBufferData(GL_ARRAY_BUFFER, sizeof(m_vertices.data[0]), NULL, GL_DYNAMIC_DRAW);
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
 
+	glGenBuffers(1, &m_external_vbo);
+	glBindBuffer(GL_ARRAY_BUFFER, m_external_vbo);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(m_vertices_external.data[0]), NULL, GL_DYNAMIC_DRAW);
+	glBindBuffer(GL_ARRAY_BUFFER, 0);
+
 	glGenBuffers(1, &m_pixel_buffer);
 	glBindBuffer(GL_PIXEL_UNPACK_BUFFER, m_pixel_buffer);
 	glBufferData(GL_PIXEL_UNPACK_BUFFER, PIXEL_BUFFER_SIZE, NULL, GL_DYNAMIC_DRAW);
@@ -346,6 +351,7 @@ Context::~Context()
 
 	glDeleteBuffers(1, &m_pixel_buffer);
 	glDeleteBuffers(1, &m_vertex_buffer);
+	glDeleteBuffers(1, &m_external_vbo);
 	glDeleteBuffers(1, &m_index_buffer);
 	glDeleteVertexArrays(1, &m_vertex_array);
 
@@ -393,7 +399,7 @@ void Context::renderThread(void* context)
 		cmd->m_font_page_uploads.clear();
 
 		for (auto& upload : cmd->m_external_tex_uploads) {
-			ctx->m_external_texture->fill(upload.pixels, upload.width, upload.height, 0, 0, upload.layer);
+			ctx->m_external_texture->fill(upload.pixels, upload.width, upload.height, upload.offset_x, upload.offset_y, upload.layer);
 			delete[] upload.pixels;
 			upload.pixels = nullptr;
 		}
@@ -410,6 +416,8 @@ void Context::renderThread(void* context)
 		const glm::ivec2 vp_size = { App.viewport.stretched.x ? App.window.size.x : App.viewport.size.x, App.viewport.stretched.y ? App.window.size.y : App.viewport.size.y };
 		const glm::ivec2 vp_offset = { App.viewport.stretched.x ? 0 : App.viewport.offset.x, App.viewport.stretched.y ? 0 : App.viewport.offset.y };
 
+		uint32_t last_blend_index = 0;
+
 		for (uint32_t i = 0; i < cmd->m_count; i++) {
 			const auto command = &cmd->m_commands[i];
 
@@ -419,11 +427,24 @@ void Context::renderThread(void* context)
 					ctx->m_game_color_ubo->updateData(data->type == UBOType::Gamma ? "gamma" : "palette", data->value);
 				} break;
 				case CommandType::SetBlendState:
+					last_blend_index = command->index;
 					ctx->bindPipeline(ctx->m_game_pipeline, command->index);
 					break;
 				case CommandType::DrawIndexed:
 					if (command->draw.count > 0)
 						glDrawElementsBaseVertex(GL_TRIANGLES, command->draw.count, GL_UNSIGNED_INT, 0, command->draw.start);
+					break;
+				case CommandType::DrawExternal:
+					glBindBuffer(GL_ARRAY_BUFFER, ctx->m_external_vbo);
+					glBufferSubData(GL_ARRAY_BUFFER, 0, command->draw.count * sizeof(VertexMod), ctx->m_vertices_external.data[frame_index].data() + command->draw.start);
+					ctx->bindPipeline(ctx->m_mod_pipeline);
+					VertexMod::bindingDescription();
+					glDrawElements(GL_TRIANGLES, command->draw.count / 4 * 6, GL_UNSIGNED_INT, 0);
+					glDisableVertexAttribArray(6);
+					glBindBuffer(GL_ARRAY_BUFFER, ctx->m_vertex_buffer);
+					Vertex::bindingDescription();
+					ctx->bindPipeline(ctx->m_game_pipeline, last_blend_index);
+					ctx->m_frame.drawcall_count++;
 					break;
 				case CommandType::PreFx:
 					ctx->m_prefx_texture->fillFromBuffer(ctx->m_game_framebuffer);
@@ -756,6 +777,10 @@ void Context::beginFrame()
 	m_vertices_late.count = 0;
 	m_vertices_late.ptr = m_vertices_late.data[0].data();
 
+	m_vertices_external.count = 0;
+	m_vertices_external.ptr = m_vertices_external.data[m_frame_index].data();
+	m_external_flushed = 0;
+
 	m_frame.vertex_count = 0;
 	m_frame.drawcall_count = 0;
 
@@ -776,6 +801,7 @@ void Context::bindDefaultFrameBuffer()
 void Context::presentFrame()
 {
 	flushVertices();
+	flushExternal();
 	setVertexFlagW(0);
 	m_command_buffer[m_frame_index].pushCommand(CommandType::Submit);
 
@@ -902,7 +928,29 @@ void Context::appendDelayedObjects()
 	m_vertices_late.ptr = m_vertices_late.data[0].data();
 }
 
-void Context::queueExternalTexUpload(uint32_t layer, const uint8_t* pixels, uint32_t width, uint32_t height)
+void Context::pushExternalObject(const std::unique_ptr<Object>& object)
+{
+	const auto vertices = object->getVertices();
+
+	memcpy(m_vertices_external.ptr, vertices, sizeof(VertexMod) * 4);
+
+	m_vertices_external.ptr += 4;
+	m_vertices_external.count += 4;
+	m_frame.vertex_count += 4;
+}
+
+void Context::flushExternal()
+{
+	if (m_vertices_external.count == m_external_flushed)
+		return;
+
+	m_command_buffer[m_frame_index].drawExternalRange(m_external_flushed, m_vertices_external.count - m_external_flushed);
+
+	m_external_flushed = m_vertices_external.count;
+	m_frame.drawcall_count++;
+}
+
+void Context::queueExternalTexUpload(uint32_t layer, const uint8_t* pixels, uint32_t width, uint32_t height, uint32_t offset_x, uint32_t offset_y)
 {
 	auto& cmd = m_command_buffer[m_frame_index];
 	ExternalTexUpload upload;
@@ -911,6 +959,8 @@ void Context::queueExternalTexUpload(uint32_t layer, const uint8_t* pixels, uint
 	upload.width = width;
 	upload.height = height;
 	upload.layer = layer;
+	upload.offset_x = offset_x;
+	upload.offset_y = offset_y;
 	cmd.m_external_tex_uploads.push_back(upload);
 }
 

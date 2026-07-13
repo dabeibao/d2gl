@@ -16,6 +16,7 @@
   <ItemGroup>
     <ClCompile Include="$(MSBuildThisFileDirectory)src\app.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\d2gl.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\external_texture.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\d2\common.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\d2\funcs.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\d2\stubs.cpp" />
@@ -92,6 +93,7 @@
   <ItemGroup>
     <ClInclude Include="$(MSBuildThisFileDirectory)src\app.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)src\d2gl.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)src\external_texture.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)src\d2\common.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)src\d2\funcs.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)src\graphic\command_buffer.h" />

@@ -401,11 +401,19 @@ ImageData loadImage(const std::string& file_path, bool flipped)
 
 	auto buffer = loadFile(file_path);
 	if (buffer.size) {
-		stbi_set_flip_vertically_on_load(flipped);
+		stbi_set_flip_vertically_on_load_thread(flipped);
 		image.data = stbi_load_from_memory(buffer.data, buffer.size, &image.width, &image.height, &image.bit, 4);
 		delete[] buffer.data;
 	}
 
+	return image;
+}
+
+ImageData loadImageFromFile(const std::string& file_path, bool flipped)
+{
+	ImageData image = { 0 };
+	stbi_set_flip_vertically_on_load_thread(flipped);
+	image.data = stbi_load(file_path.c_str(), &image.width, &image.height, &image.bit, 4);
 	return image;
 }
 
@@ -414,7 +422,7 @@ ImageData loadImageFromMemory(const uint8_t* data, size_t size, bool flipped)
 	ImageData image = { 0 };
 
 	if (data && size) {
-		stbi_set_flip_vertically_on_load(flipped);
+		stbi_set_flip_vertically_on_load_thread(flipped);
 		image.data = stbi_load_from_memory(data, (int)size, &image.width, &image.height, &image.bit, 4);
 	}
 

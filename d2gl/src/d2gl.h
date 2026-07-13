@@ -21,6 +21,7 @@
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -57,51 +58,29 @@ extern BOOL d2glConfigQuery(D2GLConfigId config_id)
 	return FALSE;
 }
 
-#ifndef D2GL_BUILD
-// External texture API (wrapper for external DLL consumers)
-// Color format: 0xAABBGGRR (ABGR packed as uint32)
-// Use 0xFFFFFFFF for full-white (no modulation)
-
 typedef uint32_t D2GLTexture;
 
-static inline D2GLTexture __stdcall d2glLoadTexture(const char* png_path)
+struct D2GLTextureAPI {
+	D2GLTexture (__fastcall *load)(const char * png_path, float zoom, uint32_t * out_width, uint32_t *out_height);
+	void (__fastcall *draw)(D2GLTexture tex, float x, float y, uint32_t color);
+	void (__fastcall * release)(D2GLTexture tex);
+	void (* clearAll)(void);
+	void (* flush)();
+};
+
+#ifndef D2GL_BUILD
+static inline D2GLTextureAPI* __stdcall d2glLoadTextureAPI()
 {
-	typedef D2GLTexture(__stdcall* d2glLoadTexture_t)(const char*);
-	static d2glLoadTexture_t impl = NULL;
+	static D2GLTextureAPI * impl = NULL;
 	if (!impl) {
 		HMODULE handle = GetModuleHandleA("glide3x.dll");
 		handle = !handle ? GetModuleHandleA("ddraw.dll") : handle;
 		if (handle)
-			impl = (d2glLoadTexture_t)GetProcAddress(handle, "_d2glLoadTexture@4");
+			impl = (D2GLTextureAPI *)GetProcAddress(handle, "d2glTextureAPI");
 	}
-	return impl ? impl(png_path) : 0;
+	return impl;
 }
 
-static inline void __stdcall d2glDrawTexture(D2GLTexture tex, float x, float y, float w, float h, uint32_t color)
-{
-	typedef void(__stdcall* d2glDrawTexture_t)(D2GLTexture, float, float, float, float, uint32_t);
-	static d2glDrawTexture_t impl = NULL;
-	if (!impl) {
-		HMODULE mod = GetModuleHandleA("glide3x.dll");
-		mod = !mod ? GetModuleHandleA("ddraw.dll") : mod;
-		if (mod)
-			impl = (d2glDrawTexture_t)GetProcAddress(mod, "_d2glDrawTexture@24");
-	}
-	if (impl) impl(tex, x, y, w, h, color);
-}
-
-static inline void __stdcall d2glReleaseTexture(D2GLTexture tex)
-{
-	typedef void(__stdcall* d2glReleaseTexture_t)(D2GLTexture);
-	static d2glReleaseTexture_t impl = NULL;
-	if (!impl) {
-		HMODULE mod = GetModuleHandleA("glide3x.dll");
-		mod = !mod ? GetModuleHandleA("ddraw.dll") : mod;
-		if (mod)
-			impl = (d2glReleaseTexture_t)GetProcAddress(mod, "_d2glReleaseTexture@4");
-	}
-	if (impl) impl(tex);
-}
 #endif
 
 #ifdef __cplusplus

@@ -10,6 +10,7 @@ enum class CommandType {
 	UBOUpdate,
 	SetBlendState,
 	DrawIndexed,
+	DrawExternal,
 	PreFx,
 	Submit,
 	TakeScreenShot,
@@ -70,6 +71,8 @@ struct ExternalTexUpload {
 	uint32_t width = 0;
 	uint32_t height = 0;
 	uint32_t layer = 0;
+	uint32_t offset_x = 0;
+	uint32_t offset_y = 0;
 };
 
 struct FontPageUpload {
@@ -115,6 +118,7 @@ public:
 
 	void pushCommand(CommandType type, uint32_t index = 0);
 	void drawIndexed(uint32_t start, uint32_t count);
+	void drawExternalRange(uint32_t start, uint32_t count);
 	void resize();
 
 	void colorUpdate(UBOType type, const void* data);
