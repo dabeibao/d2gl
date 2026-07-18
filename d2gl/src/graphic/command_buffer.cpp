@@ -71,14 +71,6 @@ void CommandBuffer::drawIndexed(uint32_t start, uint32_t count)
 	next();
 }
 
-void CommandBuffer::drawExternalRange(uint32_t start, uint32_t count)
-{
-	m_command->type = CommandType::DrawExternal;
-	m_command->draw.start = start;
-	m_command->draw.count = count;
-	next();
-}
-
 void CommandBuffer::resize()
 {
 	m_resized = true;

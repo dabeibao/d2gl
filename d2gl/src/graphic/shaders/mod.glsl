@@ -57,6 +57,7 @@ uniform sampler2D u_MapTexture;
 uniform sampler2DArray u_CursorTexture;
 uniform sampler2DArray u_FontTexture;
 uniform sampler2D u_MaskTexture;
+uniform sampler2DArray u_ExternalTexture;
 
 in vec4 v_Position;
 in vec2 v_TexCoord;
@@ -135,9 +136,12 @@ void main()
 			FragColor.rgb = v_Color2.rgb * (smoothstep(0.0, 2.0, v_TexCoord.y) / 1.4);
 			FragColor.a = v_Color1.a;
 		break;
+		case 8u:
+			FragColor = texture(u_ExternalTexture, vec3(v_TexCoord, v_TexIds.x)) * v_Color1;
+		break;
 	}
 
-	if (v_Flags.x != 3u) {
+	if (v_Flags.x != 3u && v_Flags.x != 8u) {
 		float border = 1.00001;
 		vec2 size = vec2(border / u_Scale.x / v_Extra.x, border / u_Scale.y / v_Extra.y);
 		vec2 size2 = size * 2.0, size3 = size * 3.0;

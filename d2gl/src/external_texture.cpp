@@ -18,6 +18,7 @@
 
 #include "pch.h"
 #include <shlwapi.h>
+#include "color_transform.h"
 #include "external_texture.h"
 #include "graphic/context.h"
 #include "graphic/object.h"
@@ -148,21 +149,34 @@ uint32_t ExternalTextureManager::loadTexture(const char* png_path, uint32_t* out
 		return 0;
 	}
 
-	auto image = PathIsRelativeA(png_path) ? helpers::loadImage(png_path, false) : helpers::loadImageFromFile(png_path, false);
-	if (!image.data) {
+
+	ImageData src = { 0 };
+	if (strlen(png_path) > 7 && _stricmp(png_path + strlen(png_path) - 7, ".sprite") == 0) {
+		src = helpers::loadSprite(png_path);
+	} else {
+		bool flipped = false;
+		src = PathIsRelativeA(png_path) ?
+			helpers::loadImage(png_path, false) :
+			helpers::loadImageFromFile(png_path, false);
+	}
+	if (!src.data) {
 		if (out_width) *out_width = 0;
 		if (out_height) *out_height = 0;
 		return 0;
 	}
 
-	uint32_t w = image.width;
-	uint32_t h = image.height;
+	ImageData image;
+	uint32_t w;
+	uint32_t h;
+	w = src.width;
+	h = src.height;
+	image = src;
 
 	if (w > ATLAS_SIZE) w = ATLAS_SIZE;
 	if (h > ATLAS_SIZE) h = ATLAS_SIZE;
 
-	if (out_width) *out_width = w;
-	if (out_height) *out_height = h;
+	if (out_width) *out_width = uint32_t(w * zoom);
+	if (out_height) *out_height = uint32_t(h * zoom);
 
 	const bool large = image.width > ATLAS_THRESHOLD && image.height > ATLAS_THRESHOLD;
 
@@ -210,7 +224,7 @@ uint32_t ExternalTextureManager::loadTexture(const char* png_path, uint32_t* out
 	return (uint32_t)(slot + 1);
 }
 
-void ExternalTextureManager::drawTexture(uint32_t handle, float x, float y, uint32_t color)
+void ExternalTextureManager::drawTexture(uint32_t handle, float x, float y, uint32_t color, uint8_t color_idx)
 {
 	if (handle == 0 || handle > MAX_HANDLES)
 		return;
@@ -220,26 +234,25 @@ void ExternalTextureManager::drawTexture(uint32_t handle, float x, float y, uint
 	if (!info.in_use)
 		return;
 
-	float draw_w = (float)info.w * info.zoom;
-	float draw_h = (float)info.h * info.zoom;
+	float sw = (float)info.w * info.zoom;
+	float sh = (float)info.h * info.zoom;
+	float sx = x - sw / 2.0f;
+	float sy = y - sh / 2.0f;
 
-	x -= draw_w / 2.0f;
-	y -= draw_h / 2.0f;
-
-	auto obj = std::make_unique<Object>(glm::vec2(x, y), glm::vec2(draw_w, draw_h));
-	if (info.is_atlas) {
+	auto obj = std::make_unique<Object>(glm::vec2(sx, sy), glm::vec2(sw, sh));
+	{
 		float u0 = (float)info.x / ATLAS_SIZE;
-		float v0 = (float)info.y / ATLAS_SIZE;
-		float u1 = (float)(info.x + info.w) / ATLAS_SIZE;
 		float v1 = (float)(info.y + info.h) / ATLAS_SIZE;
+		float u1 = (float)(info.x + info.w) / ATLAS_SIZE;
+		float v0 = (float)info.y / ATLAS_SIZE;
 		obj->setTexCoord({ u0, v1, u1, v0 });
 	}
 	obj->setTexIds({ (int16_t)info.layer, 0 });
-	obj->setFlags(8);
+	obj->setFlags(8, 0, 0, color_idx);
 	obj->setColor(color);
 	obj->setExtra({ 1.0f, 0.0f });
 
-	m_ctx.pushExternalObject(obj);
+	App.context->pushObject(obj);
 }
 
 void ExternalTextureManager::releaseTexture(uint32_t handle)
@@ -272,9 +285,8 @@ void ExternalTextureManager::clearAll()
 	m_free_slots.clear();
 }
 
-void ExternalTextureManager::flushExternal()
+void ExternalTextureManager::flush()
 {
-	m_ctx.flushExternal();
 }
 
 }

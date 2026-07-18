@@ -25,6 +25,7 @@
 #include "stubs.h"
 
 namespace d2gl::d2 {
+drawImageHook_t drawImageHook = nullptr;
 
 bool is_ui_window(const ui_window_t window)
 {
@@ -230,7 +231,12 @@ void __stdcall drawImageHooked(CellContext* cell, int x, int y, uint32_t gamma, 
 
 	if (modules::HDText::Instance().drawImage(cell, x, y, draw_mode)) {
 		const auto pos = modules::MotionPrediction::Instance().drawImage(x, y, D2DrawFn::Image, gamma, draw_mode);
-		drawImage(cell, pos.x, pos.y, gamma, draw_mode, palette);
+		if (d2::currently_drawing_item &&
+		    App.game.screen == GameScreen::InGame && 
+		    drawImageHook && drawImageHook(cell, x, y, gamma, draw_mode, palette)) {
+		} else {
+			drawImage(cell, pos.x, pos.y, gamma, draw_mode, palette);
+		}
 	}
 
 	modules::HDText::drawItemQuantity(true);

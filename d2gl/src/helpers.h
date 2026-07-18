@@ -72,6 +72,8 @@ BufferData loadFile(const std::string& file_path);
 ImageData loadImage(const std::string& file_path, bool flipped = true);
 ImageData loadImageFromFile(const std::string& file_path, bool flipped = true);
 ImageData loadImageFromMemory(const uint8_t* data, size_t size, bool flipped = true);
+ImageData loadSprite(const std::string& file_path);
+
 void clearImage(ImageData& image);
 bool imageInfo(const std::string& file_path, int * x, int * y);
 

@@ -51,6 +51,7 @@ namespace d2gl {
 #define TEXTURE_SLOT_MASK 14
 #define TEXTURE_SLOT_MAP 15
 #define TEXTURE_SLOT_EXTERNAL 16
+#define TEXTURE_SLOT_COLOR_TRANSFORM 17
 
 #define IMAGE_UNIT_BLUR 0
 #define IMAGE_UNIT_FXAA 1
@@ -118,15 +119,13 @@ class Context {
 	GLuint m_index_buffer;
 	GLuint m_vertex_array;
 	GLuint m_vertex_buffer;
-	GLuint m_external_vbo = 0;
+
 	uint32_t m_frame_index = 0;
 
 	bool m_delay_push = false;
 	Vertices<Vertex, MAX_VERTICES, MAX_FRAME_LATENCY> m_vertices;
 	Vertices<VertexMod, MAX_VERTICES_MOD, MAX_FRAME_LATENCY> m_vertices_mod;
 	Vertices<VertexMod, MAX_VERTICES_MOD, 1> m_vertices_late;
-	Vertices<VertexMod, MAX_VERTICES_MOD, MAX_FRAME_LATENCY> m_vertices_external;
-	uint32_t m_external_flushed = 0;
 	VertexParams m_vertex_params;
 
 	FrameMetrics m_frame;
@@ -169,6 +168,7 @@ class Context {
 
 public:
 	std::unique_ptr<Texture> m_external_texture;
+	GLuint m_color_transform_texture = 0;
 
 	Context();
 	~Context();
@@ -197,8 +197,6 @@ public:
 
 	inline void toggleDelayPush(bool delay) { m_delay_push = delay; }
 	void pushObject(const std::unique_ptr<Object>& object);
-	void pushExternalObject(const std::unique_ptr<Object>& object);
-	void flushExternal();
 	void appendDelayedObjects();
 
 	inline void setVertexColor(uint32_t color) { m_vertex_params.color = color; }

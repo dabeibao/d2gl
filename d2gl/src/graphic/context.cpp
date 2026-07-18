@@ -18,6 +18,9 @@
 
 #include "pch.h"
 #include "context.h"
+#include <algorithm>
+#include <cmath>
+#include "color_transform.h"
 #include "d2/common.h"
 #include "helpers.h"
 #include "modules/hd_cursor.h"
@@ -155,11 +158,6 @@ Context::Context()
 	glBufferData(GL_ARRAY_BUFFER, sizeof(m_vertices.data[0]), NULL, GL_DYNAMIC_DRAW);
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
 
-	glGenBuffers(1, &m_external_vbo);
-	glBindBuffer(GL_ARRAY_BUFFER, m_external_vbo);
-	glBufferData(GL_ARRAY_BUFFER, sizeof(m_vertices_external.data[0]), NULL, GL_DYNAMIC_DRAW);
-	glBindBuffer(GL_ARRAY_BUFFER, 0);
-
 	glGenBuffers(1, &m_pixel_buffer);
 	glBindBuffer(GL_PIXEL_UNPACK_BUFFER, m_pixel_buffer);
 	glBufferData(GL_PIXEL_UNPACK_BUFFER, PIXEL_BUFFER_SIZE, NULL, GL_DYNAMIC_DRAW);
@@ -208,6 +206,7 @@ Context::Context()
 		{ BindingType::Texture, "u_CursorTexture", TEXTURE_SLOT_CURSOR },
 		{ BindingType::Texture, "u_FontTexture", TEXTURE_SLOT_FONTS },
 		{ BindingType::Texture, "u_ExternalTexture", TEXTURE_SLOT_EXTERNAL },
+		{ BindingType::Texture, "u_ColorTransformTex", TEXTURE_SLOT_COLOR_TRANSFORM },
 	};
 	if (ISGLIDE3X()) {
 		mod_pipeline_ci.bindings.push_back({ BindingType::FBTexture, "u_MapTexture", TEXTURE_SLOT_MAP, &m_game_framebuffer, 1 });
@@ -215,6 +214,32 @@ Context::Context()
 	}
 	m_mod_pipeline = Context::createPipeline(mod_pipeline_ci);
 	m_mod_pipeline->setUniform1i("u_IsGlide", ISGLIDE3X());
+
+	{
+		glGenTextures(1, &m_color_transform_texture);
+		glActiveTexture(GL_TEXTURE0 + TEXTURE_SLOT_COLOR_TRANSFORM);
+		glBindTexture(GL_TEXTURE_2D, m_color_transform_texture);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, 6, COLOR_TRANSFORM_CLASS_COUNT * COLOR_TRANSFORM_PER_CLASS, 0, GL_RGBA, GL_FLOAT, nullptr);
+		const int total = COLOR_TRANSFORM_CLASS_COUNT * COLOR_TRANSFORM_PER_CLASS;
+		for (int i = 0; i < total; i++) {
+			int cls = i / COLOR_TRANSFORM_PER_CLASS;
+			int col = i % COLOR_TRANSFORM_PER_CLASS;
+			const auto& src = g_color_transforms[cls][col];
+			float row[6][4] = {
+				{ src.colorAdjustment[0], src.colorAdjustment[1], src.colorAdjustment[2], src.colorAdjustment[3] },
+				{ src.hueAdjustment0[0], src.hueAdjustment0[1], src.hueAdjustment0[2], src.hueAdjustment0[3] },
+				{ src.hueAdjustment1[0], src.hueAdjustment1[1], src.hueAdjustment1[2], src.hueAdjustment1[3] },
+				{ src.satAdjustment0[0], src.satAdjustment0[1], src.satAdjustment0[2], src.satAdjustment0[3] },
+				{ src.satAdjustment1[0], src.satAdjustment1[1], src.satAdjustment1[2], src.satAdjustment1[3] },
+				{ src.colorTint[0], src.colorTint[1], src.colorTint[2], src.colorTint[3] },
+			};
+			glTexSubImage2D(GL_TEXTURE_2D, 0, 0, i, 6, 1, GL_RGBA, GL_FLOAT, row);
+		}
+	}
 
 	if (ISGLIDE3X()) {
 		TextureCreateInfo glide_texture_ci;
@@ -304,7 +329,7 @@ Context::Context()
 	external_tex_ci.size = { 512, 512 };
 	external_tex_ci.layer_count = 128;
 	external_tex_ci.slot = TEXTURE_SLOT_EXTERNAL;
-	external_tex_ci.filter = { GL_LINEAR, GL_LINEAR };
+	external_tex_ci.filter = { GL_NEAREST, GL_NEAREST };
 	external_tex_ci.use_sparse = true;
 	m_external_texture = Context::createTexture(external_tex_ci);
 
@@ -351,7 +376,7 @@ Context::~Context()
 
 	glDeleteBuffers(1, &m_pixel_buffer);
 	glDeleteBuffers(1, &m_vertex_buffer);
-	glDeleteBuffers(1, &m_external_vbo);
+	glDeleteTextures(1, &m_color_transform_texture);
 	glDeleteBuffers(1, &m_index_buffer);
 	glDeleteVertexArrays(1, &m_vertex_array);
 
@@ -434,18 +459,8 @@ void Context::renderThread(void* context)
 					if (command->draw.count > 0)
 						glDrawElementsBaseVertex(GL_TRIANGLES, command->draw.count, GL_UNSIGNED_INT, 0, command->draw.start);
 					break;
-				case CommandType::DrawExternal:
-					glBindBuffer(GL_ARRAY_BUFFER, ctx->m_external_vbo);
-					glBufferSubData(GL_ARRAY_BUFFER, 0, command->draw.count * sizeof(VertexMod), ctx->m_vertices_external.data[frame_index].data() + command->draw.start);
-					ctx->bindPipeline(ctx->m_mod_pipeline);
-					VertexMod::bindingDescription();
-					glDrawElements(GL_TRIANGLES, command->draw.count / 4 * 6, GL_UNSIGNED_INT, 0);
-					glDisableVertexAttribArray(6);
-					glBindBuffer(GL_ARRAY_BUFFER, ctx->m_vertex_buffer);
-					Vertex::bindingDescription();
-					ctx->bindPipeline(ctx->m_game_pipeline, last_blend_index);
-					ctx->m_frame.drawcall_count++;
-					break;
+
+
 				case CommandType::PreFx:
 					ctx->m_prefx_texture->fillFromBuffer(ctx->m_game_framebuffer);
 					ctx->bindPipeline(ctx->m_prefx_pipeline);
@@ -557,6 +572,10 @@ void Context::renderThread(void* context)
 		if (cmd->m_vertex_mod_count) {
 			glBufferSubData(GL_ARRAY_BUFFER, 0, cmd->m_vertex_mod_count * sizeof(VertexMod), ctx->m_vertices_mod.data[frame_index].data());
 
+			if (ctx->m_color_transform_texture) {
+				glActiveTexture(GL_TEXTURE0 + TEXTURE_SLOT_COLOR_TRANSFORM);
+				glBindTexture(GL_TEXTURE_2D, ctx->m_color_transform_texture);
+			}
 			ctx->bindPipeline(ctx->m_mod_pipeline);
 			if (cmd->m_hd_text_mask.active) {
 				ctx->m_mod_pipeline->setUniformVec4f("u_TextMask", cmd->m_hd_text_mask.metrics);
@@ -777,10 +796,6 @@ void Context::beginFrame()
 	m_vertices_late.count = 0;
 	m_vertices_late.ptr = m_vertices_late.data[0].data();
 
-	m_vertices_external.count = 0;
-	m_vertices_external.ptr = m_vertices_external.data[m_frame_index].data();
-	m_external_flushed = 0;
-
 	m_frame.vertex_count = 0;
 	m_frame.drawcall_count = 0;
 
@@ -801,7 +816,6 @@ void Context::bindDefaultFrameBuffer()
 void Context::presentFrame()
 {
 	flushVertices();
-	flushExternal();
 	setVertexFlagW(0);
 	m_command_buffer[m_frame_index].pushCommand(CommandType::Submit);
 
@@ -926,28 +940,6 @@ void Context::appendDelayedObjects()
 	m_delay_push = false;
 	m_vertices_late.count = 0;
 	m_vertices_late.ptr = m_vertices_late.data[0].data();
-}
-
-void Context::pushExternalObject(const std::unique_ptr<Object>& object)
-{
-	const auto vertices = object->getVertices();
-
-	memcpy(m_vertices_external.ptr, vertices, sizeof(VertexMod) * 4);
-
-	m_vertices_external.ptr += 4;
-	m_vertices_external.count += 4;
-	m_frame.vertex_count += 4;
-}
-
-void Context::flushExternal()
-{
-	if (m_vertices_external.count == m_external_flushed)
-		return;
-
-	m_command_buffer[m_frame_index].drawExternalRange(m_external_flushed, m_vertices_external.count - m_external_flushed);
-
-	m_external_flushed = m_vertices_external.count;
-	m_frame.drawcall_count++;
 }
 
 void Context::queueExternalTexUpload(uint32_t layer, const uint8_t* pixels, uint32_t width, uint32_t height, uint32_t offset_x, uint32_t offset_y)

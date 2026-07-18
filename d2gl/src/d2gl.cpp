@@ -20,6 +20,7 @@
 #include "d2gl.h"
 #include "external_texture.h"
 #include "graphic/context.h"
+#include "d2/common.h"
 
 using namespace d2gl;
 #ifdef __cplusplus
@@ -67,10 +68,10 @@ static uint32_t __fastcall d2glLoadTexture(const char* png_path, float zoom, uin
 	return mgr ? mgr->loadTexture(png_path, out_width, out_height, zoom) : 0;
 }
 
-static void __fastcall d2glDrawTexture(uint32_t handle, float x, float y, uint32_t color)
+static void __fastcall d2glDrawTexture(uint32_t handle, float x, float y, uint32_t color, uint8_t color_idx)
 {
 	auto mgr = getExtMgr();
-	if (mgr) mgr->drawTexture(handle, x, y, color);
+	if (mgr) mgr->drawTexture(handle, x, y, color, color_idx);
 }
 
 static void __fastcall d2glReleaseTexture(uint32_t handle)
@@ -88,7 +89,11 @@ static void d2glClearAllTextures()
 static void d2glFlushExternalTextures()
 {
 	auto mgr = getExtMgr();
-	if (mgr) mgr->flushExternal();
+	if (mgr) mgr->flush();
+}
+static void d2glSetDrawImageHook(DrawImageHook_t hook)
+{
+	d2gl::d2::drawImageHook = (d2gl::d2::drawImageHook_t)hook;
 }
 
 __declspec(dllexport) D2GLTextureAPI d2glTextureAPI = {
@@ -97,6 +102,7 @@ __declspec(dllexport) D2GLTextureAPI d2glTextureAPI = {
 	.release = d2glReleaseTexture,
 	.clearAll = d2glClearAllTextures,
 	.flush = d2glFlushExternalTextures,
+	.setDrawHook = d2glSetDrawImageHook,
 };
 
 #ifdef __cplusplus

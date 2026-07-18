@@ -441,6 +441,165 @@ bool imageInfo(const std::string& file_path, int * x, int * y)
 	return false;
 }
 
+static void decodeDXT5Block(const uint8_t* block, int x, int y, int w, int h, uint8_t* out)
+{
+	uint8_t alpha[8];
+	alpha[0] = block[0];
+	alpha[1] = block[1];
+	if (alpha[0] > alpha[1]) {
+		for (int i = 2; i < 8; i++)
+			alpha[i] = (alpha[0] * (8 - i) + alpha[1] * (i - 1)) / 7;
+	} else {
+		alpha[2] = (alpha[0] * 4 + alpha[1]) / 5;
+		alpha[3] = (alpha[0] * 3 + alpha[1] * 2) / 5;
+		alpha[4] = (alpha[0] * 2 + alpha[1] * 3) / 5;
+		alpha[5] = (alpha[0] + alpha[1] * 4) / 5;
+		alpha[6] = 0;
+		alpha[7] = 255;
+	}
+
+	uint64_t alpha_bits = 0;
+	alpha_bits |= (uint64_t)block[2];
+	alpha_bits |= (uint64_t)block[3] << 8;
+	alpha_bits |= (uint64_t)block[4] << 16;
+	alpha_bits |= (uint64_t)block[5] << 24;
+	alpha_bits |= (uint64_t)block[6] << 32;
+	alpha_bits |= (uint64_t)block[7] << 40;
+
+	int c0 = block[8] | (block[9] << 8);
+	int c1 = block[10] | (block[11] << 8);
+	int r0 = (c0 & 0xF800) >> 8, g0 = (c0 & 0x07E0) >> 3, b0 = (c0 & 0x001F) << 3;
+	int r1 = (c1 & 0xF800) >> 8, g1 = (c1 & 0x07E0) >> 3, b1 = (c1 & 0x001F) << 3;
+	r0 |= r0 >> 5; g0 |= g0 >> 6; b0 |= b0 >> 5;
+	r1 |= r1 >> 5; g1 |= g1 >> 6; b1 |= b1 >> 5;
+
+	int colors[4][3];
+	colors[0][0] = r0; colors[0][1] = g0; colors[0][2] = b0;
+	colors[1][0] = r1; colors[1][1] = g1; colors[1][2] = b1;
+	if (c0 > c1) {
+		colors[2][0] = (r0 * 2 + r1) / 3; colors[2][1] = (g0 * 2 + g1) / 3; colors[2][2] = (b0 * 2 + b1) / 3;
+		colors[3][0] = (r0 + r1 * 2) / 3; colors[3][1] = (g0 + g1 * 2) / 3; colors[3][2] = (b0 + b1 * 2) / 3;
+	} else {
+		colors[2][0] = (r0 + r1) / 2; colors[2][1] = (g0 + g1) / 2; colors[2][2] = (b0 + b1) / 2;
+		colors[3][0] = 0; colors[3][1] = 0; colors[3][2] = 0;
+	}
+
+	uint32_t color_bits = block[12] | (block[13] << 8) | (block[14] << 16) | (block[15] << 24);
+
+	for (int py = 0; py < 4 && (y + py) < h; py++) {
+		for (int px = 0; px < 4 && (x + px) < w; px++) {
+			int idx = py * 4 + px;
+			int ci = (color_bits >> (idx * 2)) & 3;
+			int ai = (alpha_bits >> (idx * 3)) & 7;
+			uint8_t* p = out + ((y + py) * w + (x + px)) * 4;
+			p[0] = (uint8_t)colors[ci][0];
+			p[1] = (uint8_t)colors[ci][1];
+			p[2] = (uint8_t)colors[ci][2];
+			p[3] = alpha[ai];
+		}
+	}
+}
+
+static ImageData decodeDXT5(const uint8_t* input, int width, int height, size_t input_size)
+{
+	ImageData image = { width, height, 4, nullptr };
+	image.data = (uint8_t*)malloc((size_t)width * height * 4);
+	if (!image.data)
+		return image;
+
+	int bcw = (width + 3) / 4;
+	int bch = (height + 3) / 4;
+	size_t expected = bcw * bch * 16;
+	if (input_size < expected)
+		expected = input_size;
+
+	for (int t = 0; t < bch; t++) {
+		for (int s = 0; s < bcw; s++) {
+			size_t offset = (t * bcw + s) * 16;
+			if (offset + 16 > expected)
+				break;
+			decodeDXT5Block(input + offset, s * 4, t * 4, width, height, image.data);
+		}
+	}
+	return image;
+}
+
+ImageData loadSprite(const std::string& file_path)
+{
+	ImageData image = { 0 };
+	FILE* f = nullptr;
+	if (fopen_s(&f, file_path.c_str(), "rb") != 0 || !f)
+		return image;
+
+	fseek(f, 0, SEEK_END);
+	size_t file_size = ftell(f);
+	fseek(f, 0, SEEK_SET);
+	if (file_size < 40) {
+		fclose(f);
+		return image;
+	}
+
+	auto buffer = std::make_unique<uint8_t[]>(file_size);
+	if (fread(buffer.get(), 1, file_size, f) != file_size) {
+		fclose(f);
+		return image;
+	}
+	fclose(f);
+
+	const uint8_t* data = buffer.get();
+	if (data[0] != 'S' || data[1] != 'p' || data[2] != 'A' || data[3] != '1')
+		return image;
+
+	uint16_t version = data[4] | (data[5] << 8);
+	int width = data[8] | (data[9] << 8) | (data[10] << 16) | (data[11] << 24);
+	int height = data[12] | (data[13] << 8) | (data[14] << 16) | (data[15] << 24);
+
+	if (width <= 0 || height <= 0 || width > 16384 || height > 16384)
+		return image;
+
+	size_t data_offset = 0x28;
+	if (file_size < data_offset)
+		return image;
+
+	uint8_t* src_data = nullptr;
+	int src_w = width, src_h = height;
+
+	if (version == 31) {
+		size_t expected_pixels = (size_t)width * height * 4;
+		if (file_size - data_offset < expected_pixels) {
+			data_offset = file_size - expected_pixels;
+		}
+		if (file_size - data_offset < expected_pixels)
+			return image;
+
+		src_data = (uint8_t*)malloc(expected_pixels);
+		if (src_data)
+			memcpy(src_data, data + data_offset, expected_pixels);
+	} else if (version == 61) {
+		size_t bcw = (width + 3) / 4;
+		size_t bch = (height + 3) / 4;
+		size_t expected_dxt = bcw * bch * 16;
+		if (file_size - data_offset < expected_dxt) {
+			data_offset = file_size - expected_dxt;
+		}
+		if (file_size - data_offset < expected_dxt)
+			return image;
+
+		auto decoded = decodeDXT5(data + data_offset, width, height, file_size - data_offset);
+		src_data = decoded.data;
+	}
+
+	if (!src_data)
+		return image;
+
+	image.data = src_data;
+	image.width = src_w;
+	image.height = src_h;
+	image.bit = 4;
+
+	return image;
+}
+
 void clearImage(ImageData& image)
 {
 	stbi_image_free(image.data);

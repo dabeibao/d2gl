@@ -62,10 +62,10 @@ public:
 	~ExternalTextureManager() = default;
 
 	uint32_t loadTexture(const char* png_path, uint32_t* out_width, uint32_t* out_height, float zoom = 1.0f);
-	void drawTexture(uint32_t handle, float x, float y, uint32_t color);
+	void drawTexture(uint32_t handle, float x, float y, uint32_t color, uint8_t color_idx = 0);
 	void releaseTexture(uint32_t handle);
 	void clearAll();
-	void flushExternal();
+	void flush();
 };
 
 }
