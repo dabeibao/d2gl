@@ -129,7 +129,7 @@ bool ExternalTextureManager::placeInAtlas(uint16_t w, uint16_t h, uint16_t& out_
 	return true;
 }
 
-uint32_t ExternalTextureManager::loadTexture(const char* png_path, uint32_t* out_width, uint32_t* out_height, float zoom)
+uint32_t ExternalTextureManager::loadTexture(const char* png_path, uint32_t* out_width, uint32_t* out_height)
 {
 	if (!m_ctx.m_external_texture) {
 		if (out_width) *out_width = 0;
@@ -175,8 +175,8 @@ uint32_t ExternalTextureManager::loadTexture(const char* png_path, uint32_t* out
 	if (w > ATLAS_SIZE) w = ATLAS_SIZE;
 	if (h > ATLAS_SIZE) h = ATLAS_SIZE;
 
-	if (out_width) *out_width = uint32_t(w * zoom);
-	if (out_height) *out_height = uint32_t(h * zoom);
+	if (out_width) *out_width = w;
+	if (out_height) *out_height = h;
 
 	const bool large = image.width > ATLAS_THRESHOLD && image.height > ATLAS_THRESHOLD;
 
@@ -214,7 +214,6 @@ uint32_t ExternalTextureManager::loadTexture(const char* png_path, uint32_t* out
 	auto& s = m_slots[slot];
 	s.in_use = true;
 	s.is_atlas = is_atlas;
-	s.zoom = zoom;
 	s.layer = layer;
 	s.x = offset_x;
 	s.y = offset_y;
@@ -224,7 +223,7 @@ uint32_t ExternalTextureManager::loadTexture(const char* png_path, uint32_t* out
 	return (uint32_t)(slot + 1);
 }
 
-void ExternalTextureManager::drawTexture(uint32_t handle, float x, float y, uint32_t color, uint8_t color_idx)
+void ExternalTextureManager::drawTexture(uint32_t handle, float x, float y, uint32_t color, uint8_t color_idx, float zoom)
 {
 	if (handle == 0 || handle > MAX_HANDLES)
 		return;
@@ -234,8 +233,8 @@ void ExternalTextureManager::drawTexture(uint32_t handle, float x, float y, uint
 	if (!info.in_use)
 		return;
 
-	float sw = (float)info.w * info.zoom;
-	float sh = (float)info.h * info.zoom;
+	float sw = (float)info.w * zoom;
+	float sh = (float)info.h * zoom;
 	float sx = x - sw / 2.0f;
 	float sy = y - sh / 2.0f;
 

@@ -64,8 +64,8 @@ struct CellContext;
 typedef bool (__fastcall * DrawImageHook_t)(CellContext* cell, int x, int y, uint32_t gamma, int draw_mode, uint8_t* palette);
 
 	struct D2GLTextureAPI {
-	D2GLTexture (__fastcall *load)(const char * png_path, float zoom, uint32_t * out_width, uint32_t *out_height);
-	void (__fastcall *draw)(D2GLTexture tex, float x, float y, uint32_t color, uint8_t color_idx);
+	D2GLTexture (__fastcall *load)(const char * png_path, uint32_t * out_width, uint32_t *out_height);
+	void (__fastcall *draw)(D2GLTexture tex, float x, float y, uint32_t color, uint8_t color_idx, float zoom);
 	void (__fastcall * release)(D2GLTexture tex);
 	void (* clearAll)(void);
 	void (* flush)();

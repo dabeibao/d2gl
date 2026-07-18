@@ -62,16 +62,16 @@ __declspec(dllexport) bool isHDTextEnabled()
     return d2gl::App.hd_text.active;
 }
 
-static uint32_t __fastcall d2glLoadTexture(const char* png_path, float zoom, uint32_t* out_width, uint32_t* out_height)
+static uint32_t __fastcall d2glLoadTexture(const char* png_path, uint32_t* out_width, uint32_t* out_height)
 {
 	auto mgr = getExtMgr();
-	return mgr ? mgr->loadTexture(png_path, out_width, out_height, zoom) : 0;
+	return mgr ? mgr->loadTexture(png_path, out_width, out_height) : 0;
 }
 
-static void __fastcall d2glDrawTexture(uint32_t handle, float x, float y, uint32_t color, uint8_t color_idx)
+static void __fastcall d2glDrawTexture(uint32_t handle, float x, float y, uint32_t color, uint8_t color_idx, float zoom)
 {
 	auto mgr = getExtMgr();
-	if (mgr) mgr->drawTexture(handle, x, y, color, color_idx);
+	if (mgr) mgr->drawTexture(handle, x, y, color, color_idx, zoom);
 }
 
 static void __fastcall d2glReleaseTexture(uint32_t handle)

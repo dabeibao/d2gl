@@ -40,7 +40,6 @@ class ExternalTextureManager {
 	struct Slot {
 		bool in_use = false;
 		bool is_atlas = false;
-		float zoom = 1.0f;
 		uint16_t layer = 0;
 		uint16_t x = 0, y = 0, w = 0, h = 0;
 	};
@@ -61,8 +60,8 @@ public:
 	ExternalTextureManager(Context& ctx);
 	~ExternalTextureManager() = default;
 
-	uint32_t loadTexture(const char* png_path, uint32_t* out_width, uint32_t* out_height, float zoom = 1.0f);
-	void drawTexture(uint32_t handle, float x, float y, uint32_t color, uint8_t color_idx = 0);
+	uint32_t loadTexture(const char* png_path, uint32_t* out_width, uint32_t* out_height);
+	void drawTexture(uint32_t handle, float x, float y, uint32_t color, uint8_t color_idx = 0, float zoom = 1.0f);
 	void releaseTexture(uint32_t handle);
 	void clearAll();
 	void flush();
