@@ -95,6 +95,10 @@ static void d2glSetDrawImageHook(DrawImageHook_t hook)
 {
 	d2gl::d2::drawImageHook = (d2gl::d2::drawImageHook_t)hook;
 }
+static void* d2glGetCurrentlyDrawingItem()
+{
+	return d2gl::d2::currently_drawing_item;
+}
 
 __declspec(dllexport) D2GLTextureAPI d2glTextureAPI = {
 	.load = d2glLoadTexture,
@@ -103,6 +107,7 @@ __declspec(dllexport) D2GLTextureAPI d2glTextureAPI = {
 	.clearAll = d2glClearAllTextures,
 	.flush = d2glFlushExternalTextures,
 	.setDrawHook = d2glSetDrawImageHook,
+	.getCurrentlyDrawingItem = d2glGetCurrentlyDrawingItem,
 };
 
 #ifdef __cplusplus

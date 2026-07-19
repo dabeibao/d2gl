@@ -19,6 +19,7 @@
     <ClCompile Include="$(MSBuildThisFileDirectory)src\external_texture.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\d2\common.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\d2\funcs.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\d2\item_color_lut.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\d2\stubs.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\graphic\command_buffer.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\graphic\context.cpp" />
@@ -95,7 +96,10 @@
     <ClInclude Include="$(MSBuildThisFileDirectory)src\d2gl.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)src\external_texture.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)src\d2\common.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)src\d2\colormap_data.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)src\d2\funcs.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)src\d2\item_color_lut.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)src\d2\palette_data.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)src\graphic\command_buffer.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)src\graphic\upscaler.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)src\graphic\vertex.h" />

@@ -70,6 +70,7 @@ typedef bool (__fastcall * DrawImageHook_t)(CellContext* cell, int x, int y, uin
 	void (* clearAll)(void);
 	void (* flush)();
 	void (* setDrawHook)(DrawImageHook_t);
+	void* (*getCurrentlyDrawingItem)();
 };
 
 #ifndef D2GL_BUILD

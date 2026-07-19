@@ -53,6 +53,8 @@ namespace d2gl {
 #define TEXTURE_SLOT_EXTERNAL 16
 #define TEXTURE_SLOT_COLOR_TRANSFORM 17
 
+#define TEXTURE_SLOT_ITEMLUT 18
+
 #define IMAGE_UNIT_BLUR 0
 #define IMAGE_UNIT_FXAA 1
 
@@ -168,6 +170,7 @@ class Context {
 
 public:
 	std::unique_ptr<Texture> m_external_texture;
+	std::unique_ptr<Texture> m_item_lut_texture;
 	GLuint m_color_transform_texture = 0;
 
 	Context();

@@ -22,6 +22,7 @@
 #include <cmath>
 #include "color_transform.h"
 #include "d2/common.h"
+#include "d2/item_color_lut.h"
 #include "helpers.h"
 #include "modules/hd_cursor.h"
 #include "modules/hd_text.h"
@@ -207,6 +208,7 @@ Context::Context()
 		{ BindingType::Texture, "u_FontTexture", TEXTURE_SLOT_FONTS },
 		{ BindingType::Texture, "u_ExternalTexture", TEXTURE_SLOT_EXTERNAL },
 		{ BindingType::Texture, "u_ColorTransformTex", TEXTURE_SLOT_COLOR_TRANSFORM },
+		{ BindingType::Texture, "u_ItemColorLUT", TEXTURE_SLOT_ITEMLUT, &m_item_lut_texture },
 	};
 	if (ISGLIDE3X()) {
 		mod_pipeline_ci.bindings.push_back({ BindingType::FBTexture, "u_MapTexture", TEXTURE_SLOT_MAP, &m_game_framebuffer, 1 });
@@ -238,6 +240,26 @@ Context::Context()
 				{ src.colorTint[0], src.colorTint[1], src.colorTint[2], src.colorTint[3] },
 			};
 			glTexSubImage2D(GL_TEXTURE_2D, 0, 0, i, 6, 1, GL_RGBA, GL_FLOAT, row);
+		}
+	}
+
+	// 3D Color LUT: 6 families x 21 tints, 126 layers of 1024x32 atlas RGB8
+	{
+		d2::ItemColorLut::Instance().init();
+
+		TextureCreateInfo item_lut_ci;
+		item_lut_ci.size = { LUT_ATLAS_WIDTH, LUT_ATLAS_HEIGHT };
+		item_lut_ci.layer_count = LUT_LAYER_COUNT;
+		item_lut_ci.slot = TEXTURE_SLOT_ITEMLUT;
+		item_lut_ci.filter = { GL_LINEAR, GL_LINEAR };
+		item_lut_ci.format = { GL_RGB8, GL_RGB };
+		m_item_lut_texture = Context::createTexture(item_lut_ci);
+
+		const uint8_t* lut_data = d2::ItemColorLut::Instance().getLutData();
+		uint32_t layer_size = LUT_ATLAS_WIDTH * LUT_ATLAS_HEIGHT * 3;
+		for (uint32_t i = 0; i < LUT_LAYER_COUNT; i++) {
+			m_item_lut_texture->fill(lut_data + i * layer_size,
+				LUT_ATLAS_WIDTH, LUT_ATLAS_HEIGHT, 0, 0, i);
 		}
 	}
 

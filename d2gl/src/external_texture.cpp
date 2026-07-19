@@ -19,6 +19,7 @@
 #include "pch.h"
 #include <shlwapi.h>
 #include "color_transform.h"
+#include "d2/item_color_lut.h"
 #include "external_texture.h"
 #include "graphic/context.h"
 #include "graphic/object.h"
@@ -249,7 +250,20 @@ void ExternalTextureManager::drawTexture(uint32_t handle, float x, float y, uint
 	obj->setTexIds({ (int16_t)info.layer, 0 });
 	obj->setFlags(8, 0, 0, color_idx);
 	obj->setColor(color);
-	obj->setExtra({ 1.0f, 0.0f });
+	{
+		int cls = color_idx / 21;
+		int ci = color_idx % 21;
+		float extra_y = 0.0f;
+		int16_t lut_layer = 0;
+		if (cls == 1 || cls == 2 || (cls >= 5 && cls <= 8)) {
+			lut_layer = (int16_t)d2::ItemColorLut::Instance().getLayerIndex(cls, ci);
+			if (lut_layer > 0) {
+				extra_y = 1.0f;
+				obj->setTexIds({ (int16_t)info.layer, lut_layer });
+			}
+		}
+		obj->setExtra({ 1.0f, extra_y });
+	}
 
 	App.context->pushObject(obj);
 }
