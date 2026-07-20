@@ -61,16 +61,15 @@ extern BOOL d2glConfigQuery(D2GLConfigId config_id)
 typedef uint32_t D2GLTexture;
 
 struct CellContext;
-typedef bool (__fastcall * DrawImageHook_t)(CellContext* cell, int x, int y, uint32_t gamma, int draw_mode, uint8_t* palette);
+typedef bool (__fastcall * DrawImageHook_t)(CellContext* cell, void * item, int x, int y, uint32_t gamma, int draw_mode, uint8_t* palette);
 
-	struct D2GLTextureAPI {
+struct D2GLTextureAPI {
 	D2GLTexture (__fastcall *load)(const char * png_path, uint32_t * out_width, uint32_t *out_height);
 	void (__fastcall *draw)(D2GLTexture tex, float x, float y, uint32_t color, uint8_t color_idx, float zoom);
+	void (__fastcall *drawScale)(D2GLTexture tex, float x, float y, float w, float h, uint32_t color, uint8_t color_idx);
 	void (__fastcall * release)(D2GLTexture tex);
-	void (* clearAll)(void);
-	void (* flush)();
+	void (* clearAll)();
 	void (* setDrawHook)(DrawImageHook_t);
-	void* (*getCurrentlyDrawingItem)();
 };
 
 #ifndef D2GL_BUILD

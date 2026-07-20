@@ -74,6 +74,12 @@ static void __fastcall d2glDrawTexture(uint32_t handle, float x, float y, uint32
 	if (mgr) mgr->drawTexture(handle, x, y, color, color_idx, zoom);
 }
 
+static void __fastcall d2glDrawTextureScale(uint32_t handle, float x, float y, float w, float h, uint32_t color, uint8_t color_idx)
+{
+	auto mgr = getExtMgr();
+	if (mgr) mgr->drawTexture(handle, x, y, w, h, color, color_idx);
+}
+
 static void __fastcall d2glReleaseTexture(uint32_t handle)
 {
 	auto mgr = getExtMgr();
@@ -86,28 +92,17 @@ static void d2glClearAllTextures()
 	if (mgr) mgr->clearAll();
 }
 
-static void d2glFlushExternalTextures()
-{
-	auto mgr = getExtMgr();
-	if (mgr) mgr->flush();
-}
 static void d2glSetDrawImageHook(DrawImageHook_t hook)
 {
 	d2gl::d2::drawImageHook = (d2gl::d2::drawImageHook_t)hook;
 }
-static void* d2glGetCurrentlyDrawingItem()
-{
-	return d2gl::d2::currently_drawing_item;
-}
-
 __declspec(dllexport) D2GLTextureAPI d2glTextureAPI = {
 	.load = d2glLoadTexture,
 	.draw = d2glDrawTexture,
+	.drawScale = d2glDrawTextureScale,
 	.release = d2glReleaseTexture,
 	.clearAll = d2glClearAllTextures,
-	.flush = d2glFlushExternalTextures,
 	.setDrawHook = d2glSetDrawImageHook,
-	.getCurrentlyDrawingItem = d2glGetCurrentlyDrawingItem,
 };
 
 #ifdef __cplusplus

@@ -239,21 +239,38 @@ void ExternalTextureManager::drawTexture(uint32_t handle, float x, float y, uint
 	float sx = x - sw / 2.0f;
 	float sy = y - sh / 2.0f;
 
-	auto obj = std::make_unique<Object>(glm::vec2(sx, sy), glm::vec2(sw, sh));
-	{
-		float u0 = (float)info.x / ATLAS_SIZE;
-		float v1 = (float)(info.y + info.h) / ATLAS_SIZE;
-		float u1 = (float)(info.x + info.w) / ATLAS_SIZE;
-		float v0 = (float)info.y / ATLAS_SIZE;
-		obj->setTexCoord({ u0, v1, u1, v0 });
-	}
+	drawTexture(info, sx, sy, sw, sh, color, color_idx);
+}
+
+void ExternalTextureManager::drawTexture(uint32_t handle, float x, float y, float w, float h, uint32_t color, uint8_t color_idx)
+{
+	if (handle == 0 || handle > MAX_HANDLES)
+		return;
+
+	const uint32_t slot = handle - 1;
+	auto& info = m_slots[slot];
+	if (!info.in_use)
+		return;
+
+	drawTexture(info, x, y, w, h, color, color_idx);
+}
+
+void ExternalTextureManager::drawTexture(const Slot& info, float x, float y, float w, float h, uint32_t color, uint8_t color_idx)
+{
+	auto obj = std::make_unique<Object>(glm::vec2(x, y), glm::vec2(w, h));
+	float u0 = (float)info.x / ATLAS_SIZE;
+	float v1 = (float)(info.y + info.h) / ATLAS_SIZE;
+	float u1 = (float)(info.x + info.w) / ATLAS_SIZE;
+	float v0 = (float)info.y / ATLAS_SIZE;
+	obj->setTexCoord({ u0, v1, u1, v0 });
 	obj->setTexIds({ (int16_t)info.layer, 0 });
 	obj->setFlags(8, 0, 0, color_idx);
 	obj->setColor(color);
-	{
+
+	float extra_y = 0.0f;
+	if (color_idx != 0) {
 		int cls = color_idx / 21;
 		int ci = color_idx % 21;
-		float extra_y = 0.0f;
 		int16_t lut_layer = 0;
 		if (cls == 1 || cls == 2 || (cls >= 5 && cls <= 8)) {
 			lut_layer = (int16_t)d2::ItemColorLut::Instance().getLayerIndex(cls, ci);
@@ -262,8 +279,8 @@ void ExternalTextureManager::drawTexture(uint32_t handle, float x, float y, uint
 				obj->setTexIds({ (int16_t)info.layer, lut_layer });
 			}
 		}
-		obj->setExtra({ 1.0f, extra_y });
 	}
+	obj->setExtra({ 1.0f, extra_y });
 
 	App.context->pushObject(obj);
 }
@@ -296,10 +313,6 @@ void ExternalTextureManager::clearAll()
 	m_atlas_layers.clear();
 	m_next_slot = 0;
 	m_free_slots.clear();
-}
-
-void ExternalTextureManager::flush()
-{
 }
 
 }

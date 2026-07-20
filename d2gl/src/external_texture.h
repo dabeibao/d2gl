@@ -55,6 +55,7 @@ class ExternalTextureManager {
 	void freeLayer(uint16_t layer);
 	bool placeInAtlas(uint16_t w, uint16_t h, uint16_t& out_layer, uint16_t& out_x, uint16_t& out_y);
 	void doSplit(AtlasLayerInfo& al, const FreeRect& rect, uint16_t w, uint16_t h);
+	void drawTexture(const Slot& info, float x, float y, float w, float h, uint32_t color, uint8_t color_idx = 0);
 
 public:
 	ExternalTextureManager(Context& ctx);
@@ -62,9 +63,9 @@ public:
 
 	uint32_t loadTexture(const char* png_path, uint32_t* out_width, uint32_t* out_height);
 	void drawTexture(uint32_t handle, float x, float y, uint32_t color, uint8_t color_idx = 0, float zoom = 1.0f);
+	void drawTexture(uint32_t handle, float x, float y, float w, float h, uint32_t color, uint8_t color_idx = 0);
 	void releaseTexture(uint32_t handle);
 	void clearAll();
-	void flush();
 };
 
 }

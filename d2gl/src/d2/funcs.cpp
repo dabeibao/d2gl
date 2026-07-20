@@ -224,6 +224,17 @@ void uiDrawEnd()
 	App.context->onStageChange();
 }
 
+static bool tryDrawHook(CellContext * cell, int x, int y, uint32_t gamma, int draw_mode, uint8_t * palette)
+{
+	if (d2::currently_drawing_item == nullptr || App.game.screen != GameScreen::InGame) {
+		return false;
+	}
+	if (drawImageHook == nullptr) {
+		return false;
+	}
+	return drawImageHook(cell, d2::currently_drawing_item, x, y, gamma, draw_mode, palette);
+}
+
 void __stdcall drawImageHooked(CellContext* cell, int x, int y, uint32_t gamma, int draw_mode, uint8_t* palette)
 {
 	if (App.hd_cursor && App.game.draw_stage >= DrawStage::Cursor)
@@ -231,10 +242,7 @@ void __stdcall drawImageHooked(CellContext* cell, int x, int y, uint32_t gamma, 
 
 	if (modules::HDText::Instance().drawImage(cell, x, y, draw_mode)) {
 		const auto pos = modules::MotionPrediction::Instance().drawImage(x, y, D2DrawFn::Image, gamma, draw_mode);
-		if (d2::currently_drawing_item &&
-		    App.game.screen == GameScreen::InGame && 
-		    drawImageHook && drawImageHook(cell, x, y, gamma, draw_mode, palette)) {
-		} else {
+		if (!tryDrawHook(cell, pos.x, pos.y, gamma, draw_mode, palette)) {
 			drawImage(cell, pos.x, pos.y, gamma, draw_mode, palette);
 		}
 	}

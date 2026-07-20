@@ -203,7 +203,18 @@ struct CellContext {
 	union {
 		struct {
 			DWORD nCellNo;
-			DWORD _1[12];
+			DWORD flag;				// 0x04, 0x100: expansion, 0x101: ex-unique, only for item
+			DWORD nUnitType;		// 0x08, only for item
+			DWORD nTxtId;			// 0x0C, only for item
+			DWORD Unk0x10;			// 0x10, only for item
+			DWORD Unk0x14;			// 0x14
+			DWORD dwUnitToken;		// 0x18
+			DWORD dwComponentToken; // 0x1C
+			DWORD dwArmorType;		// 0x20
+			DWORD dwMode;			// 0x24
+			DWORD dwWClassToken;	// 0x28
+			char* pItemCode;		// 0x2C, only for item
+			DWORD nMaxFrame;		// 0x30
 			CellFile* pCellFile;
 			DWORD _2;
 			GfxCell* pCurGfxCell;
