@@ -18,7 +18,6 @@
 
 #include "pch.h"
 #include <shlwapi.h>
-#include "color_transform.h"
 #include "d2/item_color_lut.h"
 #include "external_texture.h"
 #include "graphic/context.h"

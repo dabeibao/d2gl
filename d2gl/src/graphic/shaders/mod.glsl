@@ -58,6 +58,7 @@ uniform sampler2DArray u_CursorTexture;
 uniform sampler2DArray u_FontTexture;
 uniform sampler2D u_MaskTexture;
 uniform sampler2DArray u_ExternalTexture;
+uniform sampler2DArray u_ItemColorLUT;
 
 in vec4 v_Position;
 in vec2 v_TexCoord;
@@ -137,7 +138,20 @@ void main()
 			FragColor.a = v_Color1.a;
 		break;
 		case 8u:
-			FragColor = texture(u_ExternalTexture, vec3(v_TexCoord, v_TexIds.x)) * v_Color1;
+		{
+			vec4 tc = texture(u_ExternalTexture, vec3(v_TexCoord, v_TexIds.x));
+			if (tc.a < 0.01) { FragColor = tc * v_Color1; break; }
+			vec3 src = tc.rgb;
+			if (v_Extra.y > 0.5 && int(v_TexIds.y) > 0) {
+				float ri = src.r * 31., gi = src.g * 31., bi = src.b * 31.;
+				float g = round(gi);
+				vec2 uv = vec2((ri + 0.5 + g * 32.) / 1024., (bi + 0.5) / 32.);
+				FragColor.xyz = texture(u_ItemColorLUT, vec3(uv, float(v_TexIds.y))).rgb;
+				FragColor.w = tc.w * v_Color1.w;
+			} else {
+				FragColor = tc * v_Color1;
+			}
+		}
 		break;
 	}
 

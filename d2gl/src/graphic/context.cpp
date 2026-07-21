@@ -20,7 +20,6 @@
 #include "context.h"
 #include <algorithm>
 #include <cmath>
-#include "color_transform.h"
 #include "d2/common.h"
 #include "d2/item_color_lut.h"
 #include "helpers.h"
@@ -207,7 +206,6 @@ Context::Context()
 		{ BindingType::Texture, "u_CursorTexture", TEXTURE_SLOT_CURSOR },
 		{ BindingType::Texture, "u_FontTexture", TEXTURE_SLOT_FONTS },
 		{ BindingType::Texture, "u_ExternalTexture", TEXTURE_SLOT_EXTERNAL },
-		{ BindingType::Texture, "u_ColorTransformTex", TEXTURE_SLOT_COLOR_TRANSFORM },
 		{ BindingType::Texture, "u_ItemColorLUT", TEXTURE_SLOT_ITEMLUT, &m_item_lut_texture },
 	};
 	if (ISGLIDE3X()) {
@@ -216,32 +214,6 @@ Context::Context()
 	}
 	m_mod_pipeline = Context::createPipeline(mod_pipeline_ci);
 	m_mod_pipeline->setUniform1i("u_IsGlide", ISGLIDE3X());
-
-	{
-		glGenTextures(1, &m_color_transform_texture);
-		glActiveTexture(GL_TEXTURE0 + TEXTURE_SLOT_COLOR_TRANSFORM);
-		glBindTexture(GL_TEXTURE_2D, m_color_transform_texture);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, 6, COLOR_TRANSFORM_CLASS_COUNT * COLOR_TRANSFORM_PER_CLASS, 0, GL_RGBA, GL_FLOAT, nullptr);
-		const int total = COLOR_TRANSFORM_CLASS_COUNT * COLOR_TRANSFORM_PER_CLASS;
-		for (int i = 0; i < total; i++) {
-			int cls = i / COLOR_TRANSFORM_PER_CLASS;
-			int col = i % COLOR_TRANSFORM_PER_CLASS;
-			const auto& src = g_color_transforms[cls][col];
-			float row[6][4] = {
-				{ src.colorAdjustment[0], src.colorAdjustment[1], src.colorAdjustment[2], src.colorAdjustment[3] },
-				{ src.hueAdjustment0[0], src.hueAdjustment0[1], src.hueAdjustment0[2], src.hueAdjustment0[3] },
-				{ src.hueAdjustment1[0], src.hueAdjustment1[1], src.hueAdjustment1[2], src.hueAdjustment1[3] },
-				{ src.satAdjustment0[0], src.satAdjustment0[1], src.satAdjustment0[2], src.satAdjustment0[3] },
-				{ src.satAdjustment1[0], src.satAdjustment1[1], src.satAdjustment1[2], src.satAdjustment1[3] },
-				{ src.colorTint[0], src.colorTint[1], src.colorTint[2], src.colorTint[3] },
-			};
-			glTexSubImage2D(GL_TEXTURE_2D, 0, 0, i, 6, 1, GL_RGBA, GL_FLOAT, row);
-		}
-	}
 
 	// 3D Color LUT: 6 families x 21 tints, 126 layers of 1024x32 atlas RGB8
 	{
@@ -398,7 +370,6 @@ Context::~Context()
 
 	glDeleteBuffers(1, &m_pixel_buffer);
 	glDeleteBuffers(1, &m_vertex_buffer);
-	glDeleteTextures(1, &m_color_transform_texture);
 	glDeleteBuffers(1, &m_index_buffer);
 	glDeleteVertexArrays(1, &m_vertex_array);
 
@@ -594,10 +565,6 @@ void Context::renderThread(void* context)
 		if (cmd->m_vertex_mod_count) {
 			glBufferSubData(GL_ARRAY_BUFFER, 0, cmd->m_vertex_mod_count * sizeof(VertexMod), ctx->m_vertices_mod.data[frame_index].data());
 
-			if (ctx->m_color_transform_texture) {
-				glActiveTexture(GL_TEXTURE0 + TEXTURE_SLOT_COLOR_TRANSFORM);
-				glBindTexture(GL_TEXTURE_2D, ctx->m_color_transform_texture);
-			}
 			ctx->bindPipeline(ctx->m_mod_pipeline);
 			if (cmd->m_hd_text_mask.active) {
 				ctx->m_mod_pipeline->setUniformVec4f("u_TextMask", cmd->m_hd_text_mask.metrics);
