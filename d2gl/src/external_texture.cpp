@@ -129,9 +129,9 @@ bool ExternalTextureManager::placeInAtlas(uint16_t w, uint16_t h, uint16_t& out_
 	return true;
 }
 
-uint32_t ExternalTextureManager::loadTexture(const char* png_path, uint32_t* out_width, uint32_t* out_height)
+uint32_t ExternalTextureManager::loadTextureRGBA(const uint8_t* pixels, uint32_t width, uint32_t height, uint32_t* out_width, uint32_t* out_height)
 {
-	if (!m_ctx.m_external_texture) {
+	if (!m_ctx.m_external_texture || !pixels) {
 		if (out_width) *out_width = 0;
 		if (out_height) *out_height = 0;
 		return 0;
@@ -149,6 +149,59 @@ uint32_t ExternalTextureManager::loadTexture(const char* png_path, uint32_t* out
 		return 0;
 	}
 
+	uint32_t w = width;
+	uint32_t h = height;
+	if (w > ATLAS_SIZE) w = ATLAS_SIZE;
+	if (h > ATLAS_SIZE) h = ATLAS_SIZE;
+
+	if (out_width) *out_width = w;
+	if (out_height) *out_height = h;
+
+	const bool large = width > ATLAS_THRESHOLD && height > ATLAS_THRESHOLD;
+
+	uint16_t layer = 0, offset_x = 0, offset_y = 0;
+	bool is_atlas = false;
+
+	if (large) {
+		layer = allocLayer();
+		if (layer >= 128)
+			return 0;
+	} else {
+		if (!placeInAtlas((uint16_t)w, (uint16_t)h, layer, offset_x, offset_y))
+			return 0;
+		is_atlas = true;
+	}
+
+	const uint8_t* upload_pixels = pixels;
+	auto clipped = std::unique_ptr<uint8_t[]>();
+	if (w != width || h != height) {
+		clipped = std::make_unique<uint8_t[]>(w * h * 4);
+		for (uint32_t y = 0; y < h; y++)
+			memcpy(clipped.get() + y * w * 4, pixels + y * width * 4, w * 4);
+		upload_pixels = clipped.get();
+	}
+
+	m_ctx.queueExternalTexUpload(layer, const_cast<uint8_t*>(upload_pixels), w, h, offset_x, offset_y);
+
+	auto& s = m_slots[slot];
+	s.in_use = true;
+	s.is_atlas = is_atlas;
+	s.layer = layer;
+	s.x = offset_x;
+	s.y = offset_y;
+	s.w = (uint16_t)w;
+	s.h = (uint16_t)h;
+
+	return (uint32_t)(slot + 1);
+}
+
+uint32_t ExternalTextureManager::loadTexture(const char* png_path, uint32_t* out_width, uint32_t* out_height)
+{
+	if (!m_ctx.m_external_texture) {
+		if (out_width) *out_width = 0;
+		if (out_height) *out_height = 0;
+		return 0;
+	}
 
 	ImageData src = { 0 };
 	if (strlen(png_path) > 7 && _stricmp(png_path + strlen(png_path) - 7, ".sprite") == 0) {
@@ -165,62 +218,9 @@ uint32_t ExternalTextureManager::loadTexture(const char* png_path, uint32_t* out
 		return 0;
 	}
 
-	ImageData image;
-	uint32_t w;
-	uint32_t h;
-	w = src.width;
-	h = src.height;
-	image = src;
-
-	if (w > ATLAS_SIZE) w = ATLAS_SIZE;
-	if (h > ATLAS_SIZE) h = ATLAS_SIZE;
-
-	if (out_width) *out_width = w;
-	if (out_height) *out_height = h;
-
-	const bool large = image.width > ATLAS_THRESHOLD && image.height > ATLAS_THRESHOLD;
-
-	uint16_t layer = 0, offset_x = 0, offset_y = 0;
-	bool is_atlas = false;
-
-	if (large) {
-		layer = allocLayer();
-		if (layer >= 128) {
-			helpers::clearImage(image);
-			return 0;
-		}
-	} else {
-		if (!placeInAtlas((uint16_t)w, (uint16_t)h, layer, offset_x, offset_y)) {
-			helpers::clearImage(image);
-			return 0;
-		}
-		is_atlas = true;
-	}
-
-	uint8_t* upload_pixels = image.data;
-	if (w != (uint32_t)image.width || h != (uint32_t)image.height) {
-		auto clipped = new uint8_t[w * h * 4];
-		for (uint32_t y = 0; y < h; y++)
-			memcpy(clipped + y * w * 4, image.data + y * image.width * 4, w * 4);
-		upload_pixels = clipped;
-	}
-
-	m_ctx.queueExternalTexUpload(layer, upload_pixels, w, h, offset_x, offset_y);
-
-	if (upload_pixels != image.data)
-		delete[] upload_pixels;
-	helpers::clearImage(image);
-
-	auto& s = m_slots[slot];
-	s.in_use = true;
-	s.is_atlas = is_atlas;
-	s.layer = layer;
-	s.x = offset_x;
-	s.y = offset_y;
-	s.w = (uint16_t)w;
-	s.h = (uint16_t)h;
-
-	return (uint32_t)(slot + 1);
+	uint32_t handle = loadTextureRGBA(src.data, src.width, src.height, out_width, out_height);
+	helpers::clearImage(src);
+	return handle;
 }
 
 void ExternalTextureManager::drawTexture(uint32_t handle, float x, float y, uint32_t color, uint8_t color_idx, float zoom)

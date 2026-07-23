@@ -35,6 +35,7 @@
     <ClCompile Include="$(MSBuildThisFileDirectory)src\modules\hd_text\page_load_pool.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\external_texture.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\d2\item_color_lut.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\hd_item.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="$(MSBuildThisFileDirectory)src\app.h" />
@@ -73,6 +74,7 @@
     <ClInclude Include="$(MSBuildThisFileDirectory)src\d2\colormap_data.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)src\d2\item_color_lut.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)src\d2\palette_data.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)src\hd_item.hpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="$(MSBuildThisFileDirectory)src\graphic\shaders\mod.glsl" />

@@ -139,6 +139,9 @@ const Glyph* GlyphSet::getGlyph(wchar_t c)
 		int page = it->second;
 		if (m_page_states[page] == PageState::NOT_LOADED)
 			loadPageAsync(page);
+
+		if (m_page_states[page] != PageState::LOADED)
+			return nullptr;
 	}
 
 	if (m_symbols) {

@@ -23,6 +23,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include <mutex>
 #include <string>
 #include <vector>
+#include <unordered_map>
 
 namespace d2gl {
 
@@ -44,8 +45,8 @@ struct CompletedPage {
 };
 
 class GlyphSet {
-	std::map<wchar_t, Glyph> m_glyphes;
-	std::map<wchar_t, Glyph>* m_symbols = nullptr;
+	std::unordered_map<wchar_t, Glyph> m_glyphes;
+	std::unordered_map<wchar_t, Glyph>* m_symbols = nullptr;
 	bool m_is_symbol = false;
 
 	std::string m_name;
@@ -67,7 +68,7 @@ public:
 
 	const Glyph* getGlyph(wchar_t c);
 	inline bool isSymbol() { return m_is_symbol; }
-	inline std::map<wchar_t, Glyph>* getGlyphes() { return &m_glyphes; }
+	inline std::unordered_map<wchar_t, Glyph>* getGlyphes() { return &m_glyphes; }
 
 	void initLoadPages(const std::vector<int>& pages);
 	void loadPageAsync(int page_index);

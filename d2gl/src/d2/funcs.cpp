@@ -23,9 +23,11 @@
 #include "modules/hd_text.h"
 #include "modules/motion_prediction.h"
 #include "stubs.h"
+#include "hd_item.hpp"
 
-namespace d2gl::d2 {
-drawImageHook_t drawImageHook = nullptr;
+namespace d2gl {
+
+namespace d2 {
 
 bool is_ui_window(const ui_window_t window)
 {
@@ -224,15 +226,12 @@ void uiDrawEnd()
 	App.context->onStageChange();
 }
 
-static bool tryDrawHook(CellContext * cell, int x, int y, uint32_t gamma, int draw_mode, uint8_t * palette)
+static bool tryDrawHDItem(CellContext* cell, int x, int y, int draw_mode, uint8_t* palette)
 {
-	if (d2::currently_drawing_item == nullptr || App.game.screen != GameScreen::InGame) {
+	if (!App.hd_item.active || App.game.screen != GameScreen::InGame)
 		return false;
-	}
-	if (drawImageHook == nullptr) {
-		return false;
-	}
-	return drawImageHook(cell, d2::currently_drawing_item, x, y, gamma, draw_mode, palette);
+
+	return HDItemDraw(cell, x, y, draw_mode, palette);
 }
 
 void __stdcall drawImageHooked(CellContext* cell, int x, int y, uint32_t gamma, int draw_mode, uint8_t* palette)
@@ -242,7 +241,7 @@ void __stdcall drawImageHooked(CellContext* cell, int x, int y, uint32_t gamma, 
 
 	if (modules::HDText::Instance().drawImage(cell, x, y, draw_mode)) {
 		const auto pos = modules::MotionPrediction::Instance().drawImage(x, y, D2DrawFn::Image, gamma, draw_mode);
-		if (!tryDrawHook(cell, pos.x, pos.y, gamma, draw_mode, palette)) {
+		if (!tryDrawHDItem(cell, pos.x, pos.y, draw_mode, palette)) {
 			drawImage(cell, pos.x, pos.y, gamma, draw_mode, palette);
 		}
 	}
@@ -471,4 +470,5 @@ void levelEntryText()
 	modules::HDText::Instance().startEntryText();
 }
 
+}
 }

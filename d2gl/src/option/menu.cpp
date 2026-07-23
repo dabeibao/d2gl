@@ -421,6 +421,9 @@ void Menu::draw()
 			drawCheckbox_m("高清光标", App.hd_cursor, "游戏和菜单屏幕光标高清化", hd_cursor)
 				saveBool("Feature", "hd_cursor", App.hd_cursor);
 			drawSeparator();
+			drawCheckbox_m("高清物品", App.hd_item.active, "游戏内物品高清化", hd_item)
+				saveBool("Feature", "hd_item", App.hd_item.active);
+			drawSeparator();
 			drawCheckbox_m("高清字体", App.hd_text.active, "游戏内文字高清化", hd_text)
 			{
 				d2::patch_hd_text->toggle(App.hd_text.active);

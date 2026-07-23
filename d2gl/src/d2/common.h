@@ -171,7 +171,4 @@ extern std::unique_ptr<Patch> patch_hd_text;
 void initHooks();
 void destroyHooks();
 
-typedef bool (__fastcall * drawImageHook_t)(CellContext* cell, void * item, int x, int y, uint32_t gamma, int draw_mode, uint8_t* palette);
-extern drawImageHook_t drawImageHook;
-
 }

@@ -18,6 +18,7 @@
 
 #pragma once
 
+#include <vector>
 #include "types.h"
 #include "vertex.h"
 
@@ -52,6 +53,9 @@ namespace d2gl {
 #define TEXTURE_SLOT_MAP 15
 #define TEXTURE_SLOT_EXTERNAL 16
 
+#define TEXTURE_EXTERNAL_MAX_LAYER	128
+#define TEXTURE_EXTERNAL_ATLAS_SIZE	512
+
 #define TEXTURE_SLOT_ITEMLUT 17
 
 #define IMAGE_UNIT_BLUR 0
@@ -85,7 +89,9 @@ struct SharpenData {
 struct FrameMetrics {
 	double frame_time = 0.0;
 	double prev_time = 0.0;
-	std::deque<double> frame_times;
+	std::vector<double> frame_times;
+
+	double total_frame_time = 0.0;
 	double average_frame_time = 0.0;
 	LARGE_INTEGER time = { 0 };
 	double frequency = 0.0;
@@ -94,6 +100,7 @@ struct FrameMetrics {
 	uint32_t drawcall_count = 0;
 	uint32_t frame_count = 0;
 	uint32_t frame_sample_count = 0;
+	uint32_t next_frame_index = 0;
 };
 
 struct LimiterMetrics {

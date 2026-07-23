@@ -21,11 +21,9 @@
 #include "external_texture.h"
 #include "graphic/context.h"
 #include "d2/common.h"
+#include "hd_item.hpp"
 
 using namespace d2gl;
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 static ExternalTextureManager* g_ext_mgr = nullptr;
 
@@ -35,6 +33,15 @@ static ExternalTextureManager* getExtMgr()
 		g_ext_mgr = new ExternalTextureManager(*d2gl::App.context);
 	return g_ext_mgr;
 }
+
+ExternalTextureManager* d2gl::getExtTextureMgr()
+{
+	return getExtMgr();
+}
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 __declspec(dllexport) BOOL __stdcall d2glConfigQueryImpl(D2GLConfigId config_id)
 {
@@ -88,21 +95,17 @@ static void __fastcall d2glReleaseTexture(uint32_t handle)
 
 static void d2glClearAllTextures()
 {
- 	auto mgr = getExtMgr();
+	HDItemClearCache();
+	auto mgr = getExtMgr();
 	if (mgr) mgr->clearAll();
 }
 
-static void d2glSetDrawImageHook(DrawImageHook_t hook)
-{
-	d2gl::d2::drawImageHook = (d2gl::d2::drawImageHook_t)hook;
-}
 __declspec(dllexport) D2GLTextureAPI d2glTextureAPI = {
 	.load = d2glLoadTexture,
 	.draw = d2glDrawTexture,
 	.drawScale = d2glDrawTextureScale,
 	.release = d2glReleaseTexture,
 	.clearAll = d2glClearAllTextures,
-	.setDrawHook = d2glSetDrawImageHook,
 };
 
 #ifdef __cplusplus

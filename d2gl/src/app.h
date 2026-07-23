@@ -144,6 +144,10 @@ struct D2GLApp {
 		Range<float> scale = { 1.0f, 0.8f, 1.2f };
 	} hd_text;
 
+	struct {
+		bool active = false;
+	} hd_item;
+
 	bool hd_cursor = false;
 	bool motion_prediction = false;
 	bool skip_intro = false;

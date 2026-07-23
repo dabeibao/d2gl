@@ -26,6 +26,7 @@
 #define DLL_D2GLIDE  "d2glide.dll"
 #define DLL_D2SOUND  "d2sound.dll"
 #define DLL_D2CLIENT "d2client.dll"
+#define DLL_D2CMP    "d2cmp.dll"
 #define DLL_D2COMMON "d2common.dll"
 #define DLL_D2LAUNCH "d2launch.dll"
 #define DLL_D2LANG   "d2lang.dll"
@@ -38,7 +39,7 @@
 #define getProc(def, v109d, v110, v111, v111b, v112, v113c, v113d, v114d)   helpers::getProcOffset(getOffset(def, v109d, v110, v111, v111b, v112, v113c, v113d, v114d))
 #define isVer(ver)    helpers::getVersion() == Version::##ver
 #define isVerNot(ver) helpers::getVersion() != Version::##ver
-#define isVerMin(ver) helpers::getVersion() >= Version::##ver
+#define isVerMin(ver) (helpers::getVersion() >= Version::##ver)
 #define isVerMax(ver) helpers::getVersion() <= Version::##ver
 // clang-format on
 
@@ -73,6 +74,8 @@ ImageData loadImage(const std::string& file_path, bool flipped = true);
 ImageData loadImageFromFile(const std::string& file_path, bool flipped = true);
 ImageData loadImageFromMemory(const uint8_t* data, size_t size, bool flipped = true);
 ImageData loadSprite(const std::string& file_path);
+ImageData loadSpriteFromMemory(const uint8_t* data, size_t size);
+bool loadSpriteInfo(const uint8_t* data, size_t size, int& total_width, int& height, uint32_t& frame_count);
 
 void clearImage(ImageData& image);
 bool imageInfo(const std::string& file_path, int * x, int * y);

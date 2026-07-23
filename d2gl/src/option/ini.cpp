@@ -226,6 +226,8 @@ void saveIni()
 		"[Feature]\n\n"
 		"; HD cursor in game & menu screen.\n"
 		"hd_cursor=%s\n\n"
+		"; HD item textures.\n"
+		"hd_item=%s\n\n"
 		"; HD in game text.\n"
 		"hd_text=%s\n"
 		"hd_text_scale=%.3f\n\n"
@@ -252,6 +254,7 @@ void saveIni()
 
 	sprintf_s(buf, feature_setting,
 		boolString(App.hd_cursor),
+		boolString(App.hd_item.active),
 		boolString(App.hd_text.active),
 		App.hd_text.scale.value,
 		// boolString(App.hd_orbs.active),
@@ -355,6 +358,7 @@ void loadIni()
 		App.viewport.stretched.y = getBool("Graphic", "stretched_vertical", App.viewport.stretched.y);
 
 		App.hd_cursor = getBool("Feature", "hd_cursor", App.hd_cursor);
+		App.hd_item.active = getBool("Feature", "hd_item", App.hd_item.active);
 		App.hd_text.active = getBool("Feature", "hd_text", App.hd_text.active);
 		App.hd_text.scale.value = ISHDTEXT() ? 1.0f : getFloat("Feature", "hd_text_scale", App.hd_text.scale);
 

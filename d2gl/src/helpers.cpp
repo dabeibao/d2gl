@@ -524,30 +524,24 @@ static ImageData decodeDXT5(const uint8_t* input, int width, int height, size_t 
 	return image;
 }
 
-ImageData loadSprite(const std::string& file_path)
+bool loadSpriteInfo(const uint8_t* data, size_t size, int& total_width, int& height, uint32_t& frame_count)
+{
+	if (!data || size < 0x28)
+		return false;
+	if (data[0] != 'S' || (data[1] != 'p' && data[1] != 'P') || (data[2] != 'A' && data[2] != 'a') || data[3] != '1')
+		return false;
+
+	total_width = data[8] | (data[9] << 8) | (data[10] << 16) | (data[11] << 24);
+	height = data[12] | (data[13] << 8) | (data[14] << 16) | (data[15] << 24);
+	frame_count = data[0x14] | (data[0x15] << 8) | (data[0x16] << 16) | (data[0x17] << 24);
+
+	return total_width > 0 && height > 0 && frame_count > 0;
+}
+
+ImageData loadSpriteFromMemory(const uint8_t* data, size_t size)
 {
 	ImageData image = { 0 };
-	FILE* f = nullptr;
-	if (fopen_s(&f, file_path.c_str(), "rb") != 0 || !f)
-		return image;
-
-	fseek(f, 0, SEEK_END);
-	size_t file_size = ftell(f);
-	fseek(f, 0, SEEK_SET);
-	if (file_size < 40) {
-		fclose(f);
-		return image;
-	}
-
-	auto buffer = std::make_unique<uint8_t[]>(file_size);
-	if (fread(buffer.get(), 1, file_size, f) != file_size) {
-		fclose(f);
-		return image;
-	}
-	fclose(f);
-
-	const uint8_t* data = buffer.get();
-	if (data[0] != 'S' || data[1] != 'p' || data[2] != 'A' || data[3] != '1')
+	if (!data || size < 0x28)
 		return image;
 
 	uint16_t version = data[4] | (data[5] << 8);
@@ -558,18 +552,17 @@ ImageData loadSprite(const std::string& file_path)
 		return image;
 
 	size_t data_offset = 0x28;
-	if (file_size < data_offset)
+	if (size < data_offset)
 		return image;
 
 	uint8_t* src_data = nullptr;
-	int src_w = width, src_h = height;
 
 	if (version == 31) {
 		size_t expected_pixels = (size_t)width * height * 4;
-		if (file_size - data_offset < expected_pixels) {
-			data_offset = file_size - expected_pixels;
+		if (size - data_offset < expected_pixels) {
+			data_offset = size - expected_pixels;
 		}
-		if (file_size - data_offset < expected_pixels)
+		if (size - data_offset < expected_pixels)
 			return image;
 
 		src_data = (uint8_t*)malloc(expected_pixels);
@@ -579,13 +572,13 @@ ImageData loadSprite(const std::string& file_path)
 		size_t bcw = (width + 3) / 4;
 		size_t bch = (height + 3) / 4;
 		size_t expected_dxt = bcw * bch * 16;
-		if (file_size - data_offset < expected_dxt) {
-			data_offset = file_size - expected_dxt;
+		if (size - data_offset < expected_dxt) {
+			data_offset = size - expected_dxt;
 		}
-		if (file_size - data_offset < expected_dxt)
+		if (size - data_offset < expected_dxt)
 			return image;
 
-		auto decoded = decodeDXT5(data + data_offset, width, height, file_size - data_offset);
+		auto decoded = decodeDXT5(data + data_offset, width, height, size - data_offset);
 		src_data = decoded.data;
 	}
 
@@ -593,9 +586,42 @@ ImageData loadSprite(const std::string& file_path)
 		return image;
 
 	image.data = src_data;
-	image.width = src_w;
-	image.height = src_h;
+	image.width = width;
+	image.height = height;
 	image.bit = 4;
+
+	return image;
+}
+
+ImageData loadSprite(const std::string& file_path)
+{
+	ImageData image = { 0 };
+
+	// Try filesystem first
+	FILE* f = nullptr;
+	if (fopen_s(&f, file_path.c_str(), "rb") == 0 && f) {
+		fseek(f, 0, SEEK_END);
+		size_t file_size = ftell(f);
+		fseek(f, 0, SEEK_SET);
+		if (file_size >= 40) {
+			auto buffer = std::make_unique<uint8_t[]>(file_size);
+			if (fread(buffer.get(), 1, file_size, f) == file_size) {
+				fclose(f);
+				return loadSpriteFromMemory(buffer.get(), file_size);
+			}
+		}
+		fclose(f);
+	}
+
+	// Fallback to MPQ (strip leading "data\\" if present since loadFile adds it)
+	auto mpq_path = file_path;
+	if (_strnicmp(mpq_path.c_str(), "data\\", 5) == 0)
+		mpq_path = mpq_path.substr(5);
+	auto mpq_buffer = loadFile(mpq_path);
+	if (mpq_buffer.size) {
+		image = loadSpriteFromMemory(mpq_buffer.data, mpq_buffer.size);
+		delete[] mpq_buffer.data;
+	}
 
 	return image;
 }

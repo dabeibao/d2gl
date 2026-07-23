@@ -20,15 +20,15 @@
 
 #include <vector>
 
-namespace d2gl {
+#include "graphic/context.h"
 
-class Context;
+namespace d2gl {
 
 class ExternalTextureManager {
 	static constexpr uint32_t MAX_HANDLES = 1024;
-	static constexpr uint16_t ATLAS_SIZE = 512;
+	static constexpr uint16_t ATLAS_SIZE = TEXTURE_EXTERNAL_ATLAS_SIZE;
 	static constexpr uint16_t ATLAS_THRESHOLD = 256;
-	static constexpr uint16_t MAX_ATLAS_LAYERS = 64;
+	static constexpr uint16_t MAX_ATLAS_LAYERS = TEXTURE_EXTERNAL_MAX_LAYER;
 
 	struct FreeRect {
 		uint16_t x, y, w, h;
@@ -62,10 +62,13 @@ public:
 	~ExternalTextureManager() = default;
 
 	uint32_t loadTexture(const char* png_path, uint32_t* out_width, uint32_t* out_height);
+	uint32_t loadTextureRGBA(const uint8_t* pixels, uint32_t width, uint32_t height, uint32_t* out_width = nullptr, uint32_t* out_height = nullptr);
 	void drawTexture(uint32_t handle, float x, float y, uint32_t color, uint8_t color_idx = 0, float zoom = 1.0f);
 	void drawTexture(uint32_t handle, float x, float y, float w, float h, uint32_t color, uint8_t color_idx = 0);
 	void releaseTexture(uint32_t handle);
 	void clearAll();
 };
+
+ExternalTextureManager* getExtTextureMgr();
 
 }

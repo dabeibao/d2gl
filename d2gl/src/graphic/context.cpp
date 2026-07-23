@@ -320,8 +320,8 @@ Context::Context()
 	}
 
 	TextureCreateInfo external_tex_ci;
-	external_tex_ci.size = { 512, 512 };
-	external_tex_ci.layer_count = 128;
+	external_tex_ci.size = { TEXTURE_EXTERNAL_ATLAS_SIZE, TEXTURE_EXTERNAL_ATLAS_SIZE };
+	external_tex_ci.layer_count = TEXTURE_EXTERNAL_MAX_LAYER;
 	external_tex_ci.slot = TEXTURE_SLOT_EXTERNAL;
 	external_tex_ci.filter = { GL_NEAREST, GL_NEAREST };
 	external_tex_ci.use_sparse = true;
@@ -576,10 +576,10 @@ void Context::renderThread(void* context)
 			glDrawElements(GL_TRIANGLES, cmd->m_vertex_mod_count / 4 * 6, GL_UNSIGNED_INT, 0);
 		}
 
-		GLsync sync = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+		//GLsync sync = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
 		glFlush();
-		glClientWaitSync(sync, 0, GL_TIMEOUT_IGNORED);
-		glDeleteSync(sync);
+		//glClientWaitSync(sync, 0, GL_TIMEOUT_IGNORED);
+		//glDeleteSync(sync);
 
 		ReleaseSemaphore(ctx->m_semaphore_gpu[frame_index], 1, NULL);
 		option::Menu::instance().draw();
@@ -827,11 +827,19 @@ void Context::presentFrame()
 	m_frame.frame_time = cur_time - m_frame.prev_time;
 	m_frame.prev_time = cur_time;
 
-	m_frame.frame_times.pop_front();
-	m_frame.frame_times.push_back(m_frame.frame_time);
-	std::deque<double>::iterator iter = m_frame.frame_times.begin() + (MAX_FRAMETIME_SAMPLE_COUNT - m_frame.frame_sample_count);
-	m_frame.average_frame_time = std::reduce(iter, m_frame.frame_times.end()) / m_frame.frame_sample_count;
-	m_frame.frame_sample_count += m_frame.frame_sample_count == MAX_FRAMETIME_SAMPLE_COUNT ? 0 : 1;
+	auto reduced = m_frame.frame_times[m_frame.next_frame_index];
+	m_frame.frame_times[m_frame.next_frame_index] = m_frame.frame_time;
+	m_frame.total_frame_time -= reduced;
+	m_frame.total_frame_time += m_frame.frame_time;
+	m_frame.average_frame_time = m_frame.total_frame_time / m_frame.frame_sample_count;
+
+	m_frame.next_frame_index += 1;
+	if (m_frame.next_frame_index >= m_frame.frame_times.size()) {
+		m_frame.next_frame_index = 0;
+	}
+	if (m_frame.frame_sample_count < MAX_FRAMETIME_SAMPLE_COUNT) {
+		m_frame.frame_sample_count += 1;
+	}
 	m_frame.frame_count++;
 }
 
