@@ -52,7 +52,7 @@ class GlyphSet {
 	std::string m_name;
 	Texture* m_texture = nullptr;
 
-	std::unordered_map<wchar_t, uint8_t> m_glyph_page;
+	std::unordered_map<wchar_t, uint16_t> m_glyph_page;
 	std::vector<PageState> m_page_states;
 	std::vector<std::vector<std::pair<wchar_t, Glyph>>> m_page_glyphs;
 	int m_page_count = 0;

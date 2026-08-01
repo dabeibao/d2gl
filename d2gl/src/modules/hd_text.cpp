@@ -98,6 +98,9 @@ HDText::HDText()
 		static std::unique_ptr<Texture> texture = Context::createTexture(texture_ci);
 		texture->set_sub_index_size(GlyphSet::s_atlas_size);
 
+		trace_log("[HDText] atlas size %d, layers %d files %d",
+			  GlyphSet::s_atlas_size, texture_ci.layer_count, png_files);
+
 		static auto symbol_set = new GlyphSet(texture.get(), "NotoSymbol");
 		symbol_set->initLoadPages({ 0 });
 		m_glyph_sets.push_back(symbol_set);

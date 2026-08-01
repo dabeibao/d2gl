@@ -77,7 +77,7 @@ GlyphSet::GlyphSet(Texture* texture, const std::string& name, GlyphSet* symbol_s
 		auto cols = helpers::splitToVector(line);
 		int page = std::atoi(cols[0].c_str());
 		wchar_t cc = (wchar_t)std::atoi(cols[1].c_str());
-		m_glyph_page[cc] = (uint8_t)page;
+		m_glyph_page[cc] = (uint16_t)page;
 		if (page > max_page) max_page = page;
 	}
 
