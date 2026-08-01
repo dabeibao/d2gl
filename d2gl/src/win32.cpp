@@ -306,8 +306,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 			int x = GET_X_LPARAM(lParam);
 			int y = GET_Y_LPARAM(lParam);
 
-			x = (int)((float)glm::max(x - App.viewport.offset.x, 0) * App.cursor.unscale.x);
-			y = (int)((float)glm::max(y - App.viewport.offset.y, 0) * App.cursor.unscale.y);
+			x = (int)glm::round((float)glm::max(x - App.viewport.offset.x, 0) * App.cursor.unscale.x);
+			y = (int)glm::round((float)glm::max(y - App.viewport.offset.y, 0) * App.cursor.unscale.y);
 			x = glm::min(x, (int)App.game.size.x);
 			y = glm::min(y, (int)App.game.size.y);
 
