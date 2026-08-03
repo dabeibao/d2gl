@@ -19,6 +19,7 @@
 #include "pch.h"
 #include "d2/common.h"
 #include "helpers.h"
+#include "modules/stats.h"
 #include "option/ini.h"
 #include "win32.h"
 
@@ -111,6 +112,7 @@ void dllDetach()
 	if (App.hmodule) {
 		win32::destroyHooks();
 		d2::destroyHooks();
+		stats::shutdown();
 		timeEndPeriod(1);
 		exit(EXIT_SUCCESS);
 	}

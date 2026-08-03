@@ -98,6 +98,7 @@ public:
 
 	void bind(uint32_t index = 0);
 	void dispatchCompute(int flag, glm::ivec2 work_size, GLbitfield barrier = 0);
+	void setBlendState(uint32_t index = 0);
 
 	GLint getUniformLocation(const std::string& name);
 	void setUniform1i(const std::string& name, int value);
@@ -113,8 +114,6 @@ public:
 	inline bool isCompileSuccess() { return m_compile_success; }
 
 private:
-	void setBlendState(uint32_t index = 0);
-
 	static BlendFactors blendFactor(BlendType type);
 	static GLuint createShader(const char* source, int type, glm::vec<2, uint8_t> version, const std::string& name);
 };

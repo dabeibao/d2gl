@@ -20,8 +20,27 @@
 #include "stubs.h"
 #include "common.h"
 #include "funcs.h"
+#include "modules/stats.h"
 
 namespace d2gl::d2 {
+
+#ifdef _STATS
+// MSVC inline asm needs each instruction on its own line, so these cannot be a
+// `\`-continued macro. Kept as repeated guarded blocks at each call site.
+#define STATS_UNIT_DRAW_START __asm pushad
+#define STATS_UNIT_DRAW_CALL  __asm call d2glStatsCountUnitDraw
+#define STATS_UNIT_DRAW_END   __asm popad
+#define STATS_WEATHER_DRAW_START __asm pushad
+#define STATS_WEATHER_DRAW_CALL  __asm call d2glStatsCountWeatherDraw
+#define STATS_WEATHER_DRAW_END   __asm popad
+#else
+#define STATS_UNIT_DRAW_START
+#define STATS_UNIT_DRAW_CALL
+#define STATS_UNIT_DRAW_END
+#define STATS_WEATHER_DRAW_START
+#define STATS_WEATHER_DRAW_CALL
+#define STATS_WEATHER_DRAW_END
+#endif
 
 // clang-format off
 __declspec(naked) uint32_t __stdcall mpqLoadStub(const char* dll, const char* mpqfile, const char* mpqname, int v4, int v5)
@@ -118,6 +137,10 @@ __declspec(naked) void drawUnitStubStack()
 		pop eax
 	}
 
+	STATS_UNIT_DRAW_START
+	STATS_UNIT_DRAW_CALL
+	STATS_UNIT_DRAW_END
+
 	__asm jmp drawUnit
 
 	patch_return_addr :
@@ -157,6 +180,10 @@ __declspec(naked) void drawUnitStubESI()
 		pop eax
 	}
 
+	STATS_UNIT_DRAW_START
+	STATS_UNIT_DRAW_CALL
+	STATS_UNIT_DRAW_END
+
 	__asm jmp drawUnit
 
 	patch_return_addr :
@@ -195,6 +222,10 @@ __declspec(naked) void drawMissileStub()
 		pop edx
 		pop eax
 	}
+
+	STATS_UNIT_DRAW_START
+	STATS_UNIT_DRAW_CALL
+	STATS_UNIT_DRAW_END
 
 	__asm jmp drawMissile
 
@@ -240,6 +271,10 @@ __declspec(naked) void drawWeatherParticlesStub()
 		pop eax
 	}
 
+	STATS_WEATHER_DRAW_START
+	STATS_WEATHER_DRAW_CALL
+	STATS_WEATHER_DRAW_END
+
 	__asm jmp drawWeatherParticles
 
 	patch_return_addr :
@@ -283,6 +318,10 @@ __declspec(naked) void drawWeatherParticlesStub114d()
 		pop edx
 		pop eax
 	}
+
+	STATS_WEATHER_DRAW_START
+	STATS_WEATHER_DRAW_CALL
+	STATS_WEATHER_DRAW_END
 
 	__asm jmp drawWeatherParticles
 

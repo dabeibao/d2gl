@@ -178,6 +178,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 
 		case WM_ACTIVATE:
 		case WM_ACTIVATEAPP: {
+			App.window.active = wParam != 0;
 			const bool fps_capped = !App.vsync && App.foreground_fps.active;
 
 			if (wParam) {

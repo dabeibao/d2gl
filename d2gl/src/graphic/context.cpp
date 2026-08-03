@@ -27,6 +27,7 @@
 #include "modules/hd_text.h"
 #include "modules/mini_map.h"
 #include "modules/motion_prediction.h"
+#include "modules/stats.h"
 #include "option/menu.h"
 #include "upscaler.h"
 #include "win32.h"
@@ -37,8 +38,15 @@
 
 namespace d2gl {
 
+#ifdef _STATS
+// Sampled timing state for Context::pushVertex (hot path, game thread only).
+static stats::HotTimer g_push_timer(512, stats::TIMER_CPU_HOT_PUSH);
+#endif
+
 Context::Context()
 {
+	stats::init();
+
 	PIXELFORMATDESCRIPTOR pfd;
 	memset(&pfd, 0, sizeof(PIXELFORMATDESCRIPTOR));
 	pfd.nSize = sizeof(PIXELFORMATDESCRIPTOR);
@@ -199,22 +207,6 @@ Context::Context()
 		m_fxaa_compute_pipeline = Context::createPipeline(fxaa_pipeline_ci);
 	}
 
-	PipelineCreateInfo mod_pipeline_ci = { "module" };
-	mod_pipeline_ci.shader = g_shader_mod;
-	mod_pipeline_ci.attachment_blends = { { BlendType::SAlpha_OneMinusSAlpha } };
-	mod_pipeline_ci.bindings = {
-		{ BindingType::Texture, "u_CursorTexture", TEXTURE_SLOT_CURSOR },
-		{ BindingType::Texture, "u_FontTexture", TEXTURE_SLOT_FONTS },
-		{ BindingType::Texture, "u_ExternalTexture", TEXTURE_SLOT_EXTERNAL },
-		{ BindingType::Texture, "u_ItemColorLUT", TEXTURE_SLOT_ITEMLUT, &m_item_lut_texture },
-	};
-	if (ISGLIDE3X()) {
-		mod_pipeline_ci.bindings.push_back({ BindingType::FBTexture, "u_MapTexture", TEXTURE_SLOT_MAP, &m_game_framebuffer, 1 });
-		mod_pipeline_ci.bindings.push_back({ BindingType::FBTexture, "u_MaskTexture", TEXTURE_SLOT_MASK, &m_game_framebuffer, 2 });
-	}
-	m_mod_pipeline = Context::createPipeline(mod_pipeline_ci);
-	m_mod_pipeline->setUniform1i("u_IsGlide", ISGLIDE3X());
-
 	// 3D Color LUT: 6 families x 21 tints, 126 layers of 1024x32 atlas RGB8
 	{
 		d2::ItemColorLut::Instance().init();
@@ -319,6 +311,35 @@ Context::Context()
 		m_game_pipeline->setUniformMat4f("u_MVP", glm::ortho(-1.0f, 1.0f, 1.0f, -1.0f));
 	}
 
+	// Overlay (uber) pipeline: single program for the whole overlay pass. HD
+	// objects and post-HD game content share one vertex format and one buffer,
+	// drawn in original order at viewport resolution. The extra sentinel picks
+	// the SD (glide palette/gamma) or HD branch; blend indices 1-4 map to the
+	// four game blend modes, index 0 is the HD alpha blend.
+	PipelineCreateInfo overlay_pipeline_ci = { "overlay" };
+	overlay_pipeline_ci.shader = g_shader_mod;
+	overlay_pipeline_ci.attachment_blends = {
+		{ BlendType::SAlpha_OneMinusSAlpha }, // 0: HD
+		{ BlendType::One_Zero },              // 1: game blend 0
+		{ BlendType::Zero_SColor },           // 2: game blend 1
+		{ BlendType::One_One },               // 3: game blend 2
+		{ BlendType::SAlpha_OneMinusSAlpha }, // 4: game blend 3
+	};
+	overlay_pipeline_ci.bindings = {
+		{ BindingType::UniformBuffer, "ubo_Colors", m_game_color_ubo->getBinding() },
+		{ BindingType::Texture, "u_CursorTexture", TEXTURE_SLOT_CURSOR },
+		{ BindingType::Texture, "u_FontTexture", TEXTURE_SLOT_FONTS },
+		{ BindingType::Texture, "u_ExternalTexture", TEXTURE_SLOT_EXTERNAL },
+		{ BindingType::Texture, "u_ItemColorLUT", TEXTURE_SLOT_ITEMLUT, &m_item_lut_texture },
+	};
+	if (ISGLIDE3X()) {
+		overlay_pipeline_ci.bindings.push_back({ BindingType::Texture, "u_Texture", TEXTURE_SLOT_DEFAULT, &m_glide_texture });
+		overlay_pipeline_ci.bindings.push_back({ BindingType::FBTexture, "u_MapTexture", TEXTURE_SLOT_MAP, &m_game_framebuffer, 1 });
+		overlay_pipeline_ci.bindings.push_back({ BindingType::FBTexture, "u_MaskTexture", TEXTURE_SLOT_MASK, &m_game_framebuffer, 2 });
+	}
+	m_overlay_pipeline = Context::createPipeline(overlay_pipeline_ci);
+	m_overlay_pipeline->setUniform1i("u_IsGlide", ISGLIDE3X());
+
 	TextureCreateInfo external_tex_ci;
 	external_tex_ci.size = { TEXTURE_EXTERNAL_ATLAS_SIZE, TEXTURE_EXTERNAL_ATLAS_SIZE };
 	external_tex_ci.layer_count = TEXTURE_EXTERNAL_MAX_LAYER;
@@ -333,6 +354,13 @@ Context::Context()
 	QueryPerformanceFrequency(&qpf);
 	m_frame.frequency = double(qpf.QuadPart) / 1000.0;
 	m_frame.frame_times.assign(MAX_FRAMETIME_SAMPLE_COUNT, m_frame.frame_time);
+
+	// Seed prev_time so the very first presentFrame() reports a real frame time
+	// instead of `QPC_now - 0` (a multi-billion ms artifact that pollutes the
+	// rolling average and the stats CSV).
+	LARGE_INTEGER qpc_first;
+	QueryPerformanceCounter(&qpc_first);
+	m_frame.prev_time = double(qpc_first.QuadPart) / m_frame.frequency;
 
 	m_limiter.timer = CreateWaitableTimer(NULL, TRUE, NULL);
 	setFpsLimit(!App.vsync && App.foreground_fps.active, App.foreground_fps.range.value);
@@ -389,203 +417,38 @@ void Context::renderThread(void* context)
 	while (ctx->m_rendering) {
 		WaitForSingleObject(ctx->m_semaphore_cpu[frame_index], INFINITE);
 		const auto cmd = &ctx->m_command_buffer[frame_index];
-
-		if (cmd->m_resized)
-			ctx->onResize(cmd->m_window_size, cmd->m_game_size, cmd->m_game_tex_bpp);
-
-		if (ctx->m_current_shader != App.shader.selected)
-			ctx->onShaderChange();
-
-		if (cmd->m_vertex_count)
-			glBufferSubData(GL_ARRAY_BUFFER, 0, cmd->m_vertex_count * sizeof(Vertex), ctx->m_vertices.data[frame_index].data());
-
-		if (cmd->m_tex_update_queue.count) {
-			glBindBuffer(GL_PIXEL_UNPACK_BUFFER, ctx->m_pixel_buffer);
-			glBufferSubData(GL_PIXEL_UNPACK_BUFFER, 0, cmd->m_tex_update_queue.data_offset, cmd->m_tex_buffer);
-			for (uint32_t i = 0; i < cmd->m_tex_update_queue.count; i++) {
-				const auto data = &cmd->m_tex_update_queue.tex_data[i];
-				ctx->m_glide_texture->fill((uint8_t*)data->offset, data->tex_size.x, data->tex_size.y, data->tex_offset.x, data->tex_offset.y, data->tex_num);
-			}
-			glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
-		}
-
-		for (auto& upload : cmd->m_font_page_uploads) {
-			upload.texture->fill(upload.pixels, upload.width, upload.height, upload.x, upload.y, upload.layer);
-			ImageData img = { (int)upload.width, (int)upload.height, 4, upload.pixels };
-			helpers::clearImage(img);
-		}
-		cmd->m_font_page_uploads.clear();
-
-		for (auto& upload : cmd->m_external_tex_uploads) {
-			ctx->m_external_texture->fill(upload.pixels, upload.width, upload.height, upload.offset_x, upload.offset_y, upload.layer);
-			delete[] upload.pixels;
-			upload.pixels = nullptr;
-		}
-		cmd->m_external_tex_uploads.clear();
-
-		if (cmd->m_tex_update.bit && ctx->m_game_texture) {
-			glBindBuffer(GL_PIXEL_UNPACK_BUFFER, ctx->m_pixel_buffer);
-			glBufferSubData(GL_PIXEL_UNPACK_BUFFER, 0, cmd->m_tex_update.size.x * cmd->m_tex_update.size.y * cmd->m_tex_update.bit, cmd->m_tex_buffer);
-			ctx->m_game_texture->fill(0, cmd->m_tex_update.size.x, cmd->m_tex_update.size.y);
-			glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
-		}
-
-		Vertex::bindingDescription();
 		const glm::ivec2 vp_size = { App.viewport.stretched.x ? App.window.size.x : App.viewport.size.x, App.viewport.stretched.y ? App.window.size.y : App.viewport.size.y };
 		const glm::ivec2 vp_offset = { App.viewport.stretched.x ? 0 : App.viewport.offset.x, App.viewport.stretched.y ? 0 : App.viewport.offset.y };
 
-		uint32_t last_blend_index = 0;
+		{
+			stats::Scope gpu_process(stats::TIMER_GPU_PROCESS);
 
-		for (uint32_t i = 0; i < cmd->m_count; i++) {
-			const auto command = &cmd->m_commands[i];
+			if (cmd->m_resized)
+				ctx->onResize(cmd->m_window_size, cmd->m_game_size, cmd->m_game_tex_bpp);
 
-			switch (command->type) {
-				case CommandType::UBOUpdate: {
-					const auto data = &cmd->m_ubo_update_queue.data[command->index];
-					ctx->m_game_color_ubo->updateData(data->type == UBOType::Gamma ? "gamma" : "palette", data->value);
-				} break;
-				case CommandType::SetBlendState:
-					last_blend_index = command->index;
-					ctx->bindPipeline(ctx->m_game_pipeline, command->index);
-					break;
-				case CommandType::DrawIndexed:
-					if (command->draw.count > 0)
-						glDrawElementsBaseVertex(GL_TRIANGLES, command->draw.count, GL_UNSIGNED_INT, 0, command->draw.start);
-					break;
+			if (ctx->m_current_shader != App.shader.selected)
+				ctx->onShaderChange();
 
+			ctx->processUploads(cmd, frame_index);
+			ctx->processCommands(cmd, vp_size, vp_offset);
+			ctx->drawOverlay(cmd, frame_index);
 
-				case CommandType::PreFx:
-					ctx->m_prefx_texture->fillFromBuffer(ctx->m_game_framebuffer);
-					ctx->bindPipeline(ctx->m_prefx_pipeline);
-
-					if (App.bloom.active) {
-						ctx->bindFrameBuffer(ctx->m_bloom_framebuffer, false);
-						ctx->setViewport(ctx->m_bloom_tex_size);
-						ctx->drawQuad();
-
-						if (App.gl_caps.compute_shader) {
-							ctx->m_bloom_texture->fillFromBuffer(ctx->m_bloom_framebuffer);
-							ctx->m_blur_compute_pipeline->dispatchCompute(0, ctx->m_bloom_work_size, GL_PIXEL_BUFFER_BARRIER_BIT);
-							ctx->m_bloom_texture->fillFromBuffer(ctx->m_bloom_framebuffer);
-							ctx->m_blur_compute_pipeline->dispatchCompute(1, ctx->m_bloom_work_size, GL_PIXEL_BUFFER_BARRIER_BIT);
-							ctx->m_bloom_texture->fillFromBuffer(ctx->m_bloom_framebuffer);
-							ctx->m_blur_compute_pipeline->dispatchCompute(0, ctx->m_bloom_work_size, GL_PIXEL_BUFFER_BARRIER_BIT);
-							ctx->m_bloom_texture->fillFromBuffer(ctx->m_bloom_framebuffer);
-							ctx->m_blur_compute_pipeline->dispatchCompute(1, ctx->m_bloom_work_size, GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
-						} else {
-							ctx->m_bloom_texture->fillFromBuffer(ctx->m_bloom_framebuffer);
-							ctx->drawQuad(1);
-							ctx->m_bloom_texture->fillFromBuffer(ctx->m_bloom_framebuffer);
-							ctx->drawQuad(2);
-							ctx->m_bloom_texture->fillFromBuffer(ctx->m_bloom_framebuffer);
-							ctx->drawQuad(1);
-							ctx->m_bloom_texture->fillFromBuffer(ctx->m_bloom_framebuffer);
-							ctx->drawQuad(2);
-						}
-
-						ctx->bindFrameBuffer(ctx->m_game_framebuffer, false);
-						ctx->setViewport(cmd->m_game_size);
-						ctx->bindPipeline(ctx->m_prefx_pipeline);
-						FrameBuffer::setDrawBuffers(1);
-					}
-					ctx->drawQuad(3 + App.bloom.active, 0, App.lut.selected);
-
-					ctx->bindPipeline(ctx->m_game_pipeline, command->index);
-					FrameBuffer::setDrawBuffers(ctx->m_game_framebuffer->getAttachmentCount());
-					break;
-				case CommandType::Begin:
-					if (cmd->m_screen == GameScreen::Movie) {
-						ctx->bindDefaultFrameBuffer();
-						ctx->setViewport(App.window.size);
-					} else {
-						ctx->bindFrameBuffer(ctx->m_game_framebuffer, ISGLIDE3X());
-						ctx->setViewport(cmd->m_game_size);
-					}
-					break;
-				case CommandType::Submit:
-					if (cmd->m_screen == GameScreen::Movie) {
-						ctx->bindPipeline(ctx->m_movie_pipeline);
-						ctx->drawQuad();
-					} else {
-						if (App.sharpen.active) {
-							const auto sharpen_data = glm::vec3(App.sharpen.strength.value, App.sharpen.clamp.value, App.sharpen.radius.value);
-							if (ctx->m_sharpen_data != sharpen_data) {
-								ctx->m_postfx_ubo->updateDataVec4f("sharpen", glm::vec4(sharpen_data, 1.0f));
-								ctx->m_sharpen_data = sharpen_data;
-							}
-						}
-
-						if (ISGLIDE3X()) {
-							if (App.bloom.active) {
-								const auto bloom_data = glm::vec2(App.bloom.exposure.value, App.bloom.gamma.value);
-								if (ctx->m_bloom_data != bloom_data) {
-									ctx->m_bloom_ubo->updateDataVec2f("bloom", bloom_data);
-									ctx->m_bloom_data = bloom_data;
-								}
-							}
-						} else {
-							ctx->bindPipeline(ctx->m_game_pipeline);
-							ctx->drawQuad();
-						}
-
-						if (App.sharpen.active || App.fxaa.active)
-							Upscaler::Instance().process(ctx->m_game_framebuffer, vp_size, vp_offset, ctx->m_postfx_framebuffer);
-						else
-							Upscaler::Instance().process(ctx->m_game_framebuffer, vp_size, vp_offset);
-
-						if (App.sharpen.active) {
-							if (App.fxaa.active)
-								ctx->m_postfx_texture->fillFromBuffer(ctx->m_postfx_framebuffer);
-							else {
-								ctx->bindDefaultFrameBuffer();
-								ctx->setViewport(vp_size, vp_offset);
-							}
-							ctx->bindPipeline(ctx->m_postfx_pipeline);
-							ctx->drawQuad(App.fxaa.active);
-						}
-
-						if (App.fxaa.active) {
-							if (App.gl_caps.compute_shader) {
-								ctx->m_postfx_texture->fillFromBuffer(ctx->m_postfx_framebuffer);
-								ctx->m_fxaa_compute_pipeline->dispatchCompute(App.fxaa.presets.selected, ctx->m_fxaa_work_size, GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
-							}
-							ctx->bindDefaultFrameBuffer();
-							ctx->setViewport(vp_size, vp_offset);
-							ctx->bindPipeline(ctx->m_postfx_pipeline);
-							ctx->drawQuad(2 + App.gl_caps.compute_shader, App.fxaa.presets.selected);
-						}
-					}
-					break;
-				case CommandType::TakeScreenShot:
-					ctx->takeScreenShot();
-					break;
-			}
+			stats::Scope gpu_flush(stats::TIMER_GPU_FLUSH);
+			//GLsync sync = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+			glFlush();
+			//glClientWaitSync(sync, 0, GL_TIMEOUT_IGNORED);
+			//glDeleteSync(sync);
 		}
-
-		if (cmd->m_vertex_mod_count) {
-			glBufferSubData(GL_ARRAY_BUFFER, 0, cmd->m_vertex_mod_count * sizeof(VertexMod), ctx->m_vertices_mod.data[frame_index].data());
-
-			ctx->bindPipeline(ctx->m_mod_pipeline);
-			if (cmd->m_hd_text_mask.active) {
-				ctx->m_mod_pipeline->setUniformVec4f("u_TextMask", cmd->m_hd_text_mask.metrics);
-				ctx->m_mod_pipeline->setUniform1i("u_IsMasking", cmd->m_hd_text_mask.masking);
-				cmd->m_hd_text_mask.active = false;
-			}
-
-			VertexMod::bindingDescription();
-			glDrawElements(GL_TRIANGLES, cmd->m_vertex_mod_count / 4 * 6, GL_UNSIGNED_INT, 0);
-		}
-
-		//GLsync sync = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
-		glFlush();
-		//glClientWaitSync(sync, 0, GL_TIMEOUT_IGNORED);
-		//glDeleteSync(sync);
 
 		ReleaseSemaphore(ctx->m_semaphore_gpu[frame_index], 1, NULL);
 		option::Menu::instance().draw();
-		SwapBuffers(App.hdc);
+		{
+			stats::Scope gpu_swap(stats::TIMER_GPU_SWAP);
+			SwapBuffers(App.hdc);
+		}
 
 		if (ctx->m_limiter.active) {
+			stats::Scope gpu_limiter(stats::TIMER_GPU_LIMITER);
 			WaitForSingleObject(ctx->m_limiter.timer, (DWORD)ctx->m_limiter.frame_len_ms + 1);
 			ctx->m_limiter.due_time.QuadPart += ctx->m_limiter.frame_len_ns;
 			SetWaitableTimer(ctx->m_limiter.timer, &ctx->m_limiter.due_time, 0, NULL, NULL, FALSE);
@@ -597,6 +460,240 @@ void Context::renderThread(void* context)
 	wglMakeCurrent(NULL, NULL);
 	for (uint32_t i = 0; i < 2; i++)
 		ReleaseSemaphore(ctx->m_semaphore_gpu[i], 1, NULL);
+}
+
+void Context::processUploads(CommandBuffer* cmd, uint32_t frame_index)
+{
+	if (cmd->m_vertex_count) {
+		stats::Scope upload_vertex(stats::TIMER_GPU_UPLOAD_VERTEX);
+		glBufferSubData(GL_ARRAY_BUFFER, 0, cmd->m_vertex_count * sizeof(Vertex), m_vertices.data[frame_index].data());
+	}
+
+	if (cmd->m_tex_update_queue.count) {
+		stats::Scope upload_tex(stats::TIMER_GPU_UPLOAD_TEX);
+		stats::addCount(stats::CTR_TEX_UPDATES, cmd->m_tex_update_queue.count);
+		stats::addBytes(stats::CTR_TEX_BYTES, cmd->m_tex_update_queue.data_offset);
+		glBindBuffer(GL_PIXEL_UNPACK_BUFFER, m_pixel_buffer);
+		glBufferSubData(GL_PIXEL_UNPACK_BUFFER, 0, cmd->m_tex_update_queue.data_offset, cmd->m_tex_buffer);
+		for (uint32_t i = 0; i < cmd->m_tex_update_queue.count; i++) {
+			const auto data = &cmd->m_tex_update_queue.tex_data[i];
+			m_glide_texture->fill((uint8_t*)data->offset, data->tex_size.x, data->tex_size.y, data->tex_offset.x, data->tex_offset.y, data->tex_num);
+		}
+		glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+	}
+
+	for (auto& upload : cmd->m_font_page_uploads) {
+		stats::Scope upload_tex(stats::TIMER_GPU_UPLOAD_TEX);
+		stats::addCount(stats::CTR_FONT_PAGES);
+		upload.texture->fill(upload.pixels, upload.width, upload.height, upload.x, upload.y, upload.layer);
+		ImageData img = { (int)upload.width, (int)upload.height, 4, upload.pixels };
+		helpers::clearImage(img);
+	}
+	cmd->m_font_page_uploads.clear();
+
+	for (auto& upload : cmd->m_external_tex_uploads) {
+		stats::Scope upload_tex(stats::TIMER_GPU_UPLOAD_TEX);
+		stats::addCount(stats::CTR_EXTERNAL_UPLOADS);
+		m_external_texture->fill(upload.pixels, upload.width, upload.height, upload.offset_x, upload.offset_y, upload.layer);
+		delete[] upload.pixels;
+		upload.pixels = nullptr;
+	}
+	cmd->m_external_tex_uploads.clear();
+
+	if (cmd->m_tex_update.bit && m_game_texture) {
+		stats::Scope upload_tex(stats::TIMER_GPU_UPLOAD_TEX);
+		stats::addCount(stats::CTR_TEX_UPDATES);
+		stats::addBytes(stats::CTR_TEX_BYTES, cmd->m_tex_update.size.x * cmd->m_tex_update.size.y * cmd->m_tex_update.bit);
+		glBindBuffer(GL_PIXEL_UNPACK_BUFFER, m_pixel_buffer);
+		glBufferSubData(GL_PIXEL_UNPACK_BUFFER, 0, cmd->m_tex_update.size.x * cmd->m_tex_update.size.y * cmd->m_tex_update.bit, cmd->m_tex_buffer);
+		m_game_texture->fill(0, cmd->m_tex_update.size.x, cmd->m_tex_update.size.y);
+		glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+	}
+}
+
+void Context::processCommands(CommandBuffer* cmd, glm::ivec2 vp_size, glm::ivec2 vp_offset)
+{
+	Vertex::bindingDescription();
+
+	uint32_t last_blend_index = 0;
+
+	stats::Scope gpu_commands(stats::TIMER_GPU_COMMANDS);
+	for (uint32_t i = 0; i < cmd->m_count; i++) {
+		const auto command = &cmd->m_commands[i];
+		stats::addCount(stats::CTR_COMMANDS);
+
+		switch (command->type) {
+			case CommandType::UBOUpdate: {
+				stats::addCount(stats::CTR_UBO_UPDATES);
+				const auto data = &cmd->m_ubo_update_queue.data[command->index];
+				m_game_color_ubo->updateData(data->type == UBOType::Gamma ? "gamma" : "palette", data->value);
+			} break;
+			case CommandType::SetBlendState:
+				stats::addCount(stats::CTR_SET_BLEND);
+				last_blend_index = command->index;
+				bindPipeline(m_game_pipeline, command->index);
+				break;
+			case CommandType::DrawIndexed:
+				if (command->draw.count > 0) {
+					stats::addCount(stats::CTR_DRAWCALLS);
+					glDrawElementsBaseVertex(GL_TRIANGLES, command->draw.count, GL_UNSIGNED_INT, 0, command->draw.start);
+				}
+				break;
+			case CommandType::PreFx:
+				processPreFx(cmd, command->index);
+				break;
+			case CommandType::Begin:
+				if (cmd->m_screen == GameScreen::Movie) {
+					bindDefaultFrameBuffer();
+					setViewport(App.window.size);
+				} else {
+					bindFrameBuffer(m_game_framebuffer, ISGLIDE3X());
+					setViewport(cmd->m_game_size);
+				}
+				break;
+			case CommandType::Submit:
+				processSubmit(cmd, vp_size, vp_offset, command->index);
+				break;
+			case CommandType::TakeScreenShot:
+				takeScreenShot();
+				break;
+		}
+	}
+}
+
+void Context::processPreFx(CommandBuffer* cmd, uint32_t index)
+{
+	stats::Scope gpu_prefx(stats::TIMER_GPU_PREFX);
+
+	m_prefx_texture->fillFromBuffer(m_game_framebuffer);
+	bindPipeline(m_prefx_pipeline);
+
+	if (App.bloom.active) {
+		bindFrameBuffer(m_bloom_framebuffer, false);
+		setViewport(m_bloom_tex_size);
+		drawQuad();
+
+		if (App.gl_caps.compute_shader) {
+			m_bloom_texture->fillFromBuffer(m_bloom_framebuffer);
+			m_blur_compute_pipeline->dispatchCompute(0, m_bloom_work_size, GL_PIXEL_BUFFER_BARRIER_BIT);
+			m_bloom_texture->fillFromBuffer(m_bloom_framebuffer);
+			m_blur_compute_pipeline->dispatchCompute(1, m_bloom_work_size, GL_PIXEL_BUFFER_BARRIER_BIT);
+			m_bloom_texture->fillFromBuffer(m_bloom_framebuffer);
+			m_blur_compute_pipeline->dispatchCompute(0, m_bloom_work_size, GL_PIXEL_BUFFER_BARRIER_BIT);
+			m_bloom_texture->fillFromBuffer(m_bloom_framebuffer);
+			m_blur_compute_pipeline->dispatchCompute(1, m_bloom_work_size, GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
+		} else {
+			m_bloom_texture->fillFromBuffer(m_bloom_framebuffer);
+			drawQuad(1);
+			m_bloom_texture->fillFromBuffer(m_bloom_framebuffer);
+			drawQuad(2);
+			m_bloom_texture->fillFromBuffer(m_bloom_framebuffer);
+			drawQuad(1);
+			m_bloom_texture->fillFromBuffer(m_bloom_framebuffer);
+			drawQuad(2);
+		}
+
+		bindFrameBuffer(m_game_framebuffer, false);
+		setViewport(cmd->m_game_size);
+		bindPipeline(m_prefx_pipeline);
+		FrameBuffer::setDrawBuffers(1);
+	}
+	drawQuad(3 + App.bloom.active, 0, App.lut.selected);
+
+	bindPipeline(m_game_pipeline, index);
+	FrameBuffer::setDrawBuffers(m_game_framebuffer->getAttachmentCount());
+}
+
+void Context::processSubmit(CommandBuffer* cmd, glm::ivec2 vp_size, glm::ivec2 vp_offset, uint32_t index)
+{
+	stats::Scope gpu_submit(stats::TIMER_GPU_SUBMIT);
+
+	if (cmd->m_screen == GameScreen::Movie) {
+		bindPipeline(m_movie_pipeline);
+		drawQuad();
+	} else {
+		if (App.sharpen.active) {
+			const auto sharpen_data = glm::vec3(App.sharpen.strength.value, App.sharpen.clamp.value, App.sharpen.radius.value);
+			if (m_sharpen_data != sharpen_data) {
+				m_postfx_ubo->updateDataVec4f("sharpen", glm::vec4(sharpen_data, 1.0f));
+				m_sharpen_data = sharpen_data;
+			}
+		}
+
+		if (ISGLIDE3X()) {
+			if (App.bloom.active) {
+				const auto bloom_data = glm::vec2(App.bloom.exposure.value, App.bloom.gamma.value);
+				if (m_bloom_data != bloom_data) {
+					m_bloom_ubo->updateDataVec2f("bloom", bloom_data);
+					m_bloom_data = bloom_data;
+				}
+			}
+		} else {
+			bindPipeline(m_game_pipeline);
+			drawQuad();
+		}
+
+		if (App.sharpen.active || App.fxaa.active)
+			Upscaler::Instance().process(m_game_framebuffer, vp_size, vp_offset, m_postfx_framebuffer);
+		else
+			Upscaler::Instance().process(m_game_framebuffer, vp_size, vp_offset);
+
+		if (App.sharpen.active) {
+			if (App.fxaa.active)
+				m_postfx_texture->fillFromBuffer(m_postfx_framebuffer);
+			else {
+				bindDefaultFrameBuffer();
+				setViewport(vp_size, vp_offset);
+			}
+			bindPipeline(m_postfx_pipeline);
+			drawQuad(App.fxaa.active);
+		}
+
+		if (App.fxaa.active) {
+			if (App.gl_caps.compute_shader) {
+				m_postfx_texture->fillFromBuffer(m_postfx_framebuffer);
+				m_fxaa_compute_pipeline->dispatchCompute(App.fxaa.presets.selected, m_fxaa_work_size, GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
+			}
+			bindDefaultFrameBuffer();
+			setViewport(vp_size, vp_offset);
+			bindPipeline(m_postfx_pipeline);
+			drawQuad(2 + App.gl_caps.compute_shader, App.fxaa.presets.selected);
+		}
+	}
+}
+
+void Context::drawOverlay(CommandBuffer* cmd, uint32_t frame_index)
+{
+	if (cmd->m_vertex_mod_count) {
+		stats::Scope gpu_overlay(stats::TIMER_GPU_OVERLAY);
+		stats::addCount(stats::CTR_OVERLAY_RUNS, cmd->m_overlay_run_count);
+		glBufferSubData(GL_ARRAY_BUFFER, 0, cmd->m_vertex_mod_count * sizeof(VertexMod), m_vertices_mod.data[frame_index].data());
+
+		VertexMod::bindingDescription();
+		bindPipeline(m_overlay_pipeline, 0);
+		m_overlay_pipeline->setUniform1i("u_HasMask", cmd->m_has_mask);
+		if (cmd->m_hd_text_mask.active) {
+			m_overlay_pipeline->setUniformVec4f("u_TextMask", cmd->m_hd_text_mask.metrics);
+			m_overlay_pipeline->setUniform1i("u_IsMasking", cmd->m_hd_text_mask.masking);
+			cmd->m_hd_text_mask.active = false;
+		}
+
+		if (cmd->m_overlay_run_count) {
+			uint8_t last_blend = 0xFF;
+			for (uint32_t i = 0; i < cmd->m_overlay_run_count; i++) {
+				const auto& run = cmd->m_overlay_runs[i];
+				if (run.blend != last_blend) {
+					m_overlay_pipeline->setBlendState(run.blend);
+					last_blend = run.blend;
+				}
+				stats::addCount(stats::CTR_DRAWCALLS);
+				glDrawElementsBaseVertex(GL_TRIANGLES, run.count / 4 * 6, GL_UNSIGNED_INT, 0, run.start);
+			}
+		} else {
+			stats::addCount(stats::CTR_DRAWCALLS);
+			glDrawElements(GL_TRIANGLES, cmd->m_vertex_mod_count / 4 * 6, GL_UNSIGNED_INT, 0);
+		}
+	}
 }
 
 void Context::onResize(glm::uvec2 w_size, glm::uvec2 g_size, uint32_t bpp)
@@ -614,7 +711,7 @@ void Context::onResize(glm::uvec2 w_size, glm::uvec2 g_size, uint32_t bpp)
 	if (game_resized) {
 		glm::mat4 mvp = glm::ortho(0.0f, (float)game_size.x, (float)game_size.y, 0.0f);
 		modules::HDText::Instance().setMVP(mvp);
-		m_mod_pipeline->setUniformMat4f("u_MVP", mvp);
+		m_overlay_pipeline->setUniformMat4f("u_MVP", mvp);
 
 		FrameBufferCreateInfo frambuffer_ci;
 		frambuffer_ci.size = game_size;
@@ -691,11 +788,11 @@ void Context::onResize(glm::uvec2 w_size, glm::uvec2 g_size, uint32_t bpp)
 	}
 
 	m_postfx_ubo->updateDataVec2f("rel_size", { 1.0f / App.viewport.size.x, 1.0f / App.viewport.size.y });
-	m_mod_pipeline->setUniformVec2f("u_Scale", App.viewport.scale);
+	m_overlay_pipeline->setUniformVec2f("u_Scale", App.viewport.scale);
 
 	const glm::ivec2 vp_size = { App.viewport.stretched.x ? App.window.size.x : App.viewport.size.x, App.viewport.stretched.y ? App.window.size.y : App.viewport.size.y };
 	const glm::ivec2 vp_offset = { App.viewport.stretched.x ? 0 : App.viewport.offset.x, App.viewport.stretched.y ? 0 : App.viewport.offset.y };
-	m_mod_pipeline->setUniformVec4f("u_Viewport", { (float)vp_offset.x, (float)vp_offset.y, (float)vp_size.x, (float)vp_size.y });
+	m_overlay_pipeline->setUniformVec4f("u_Viewport", { (float)vp_offset.x, (float)vp_offset.y, (float)vp_size.x, (float)vp_size.y });
 
 	modules::MiniMap::Instance().resize();
 	toggleVsync();
@@ -714,6 +811,8 @@ void Context::onShaderChange()
 
 void Context::onStageChange()
 {
+	stats::Scope stage_scope(stats::TIMER_CPU_STAGE);
+
 	if (App.game.screen == GameScreen::Movie)
 		return;
 
@@ -782,6 +881,9 @@ void Context::beginFrame()
 	m_vertices_mod.ptr = m_vertices_mod.data[m_frame_index].data();
 
 	m_delay_push = false;
+	m_top_pass_active = false;
+	m_world_hd_occludable = false;
+	m_overlay_open = false;
 	m_vertices_late.count = 0;
 	m_vertices_late.ptr = m_vertices_late.data[0].data();
 
@@ -789,10 +891,14 @@ void Context::beginFrame()
 	m_frame.drawcall_count = 0;
 
 	App.game.draw_stage = DrawStage::World;
-	modules::HDText::Instance().reset();
-	modules::MotionPrediction::Instance().update();
+	{
+		stats::Scope modules_scope(stats::TIMER_CPU_MODULES);
+		modules::HDText::Instance().reset();
+		modules::MotionPrediction::Instance().update();
+	}
 
 	m_command_buffer[m_frame_index].pushCommand(CommandType::Begin);
+	stats::beginDraw();
 }
 
 void Context::bindDefaultFrameBuffer()
@@ -804,8 +910,18 @@ void Context::bindDefaultFrameBuffer()
 
 void Context::presentFrame()
 {
+	stats::endDraw();
+
+#ifdef _STATS
+	const uint32_t sd_vertices = m_frame.vertex_count > m_vertices_mod.count ? m_frame.vertex_count - m_vertices_mod.count : 0;
+	stats::addCount(stats::CTR_VERTICES_SD, sd_vertices);
+	stats::addCount(stats::CTR_VERTICES_MOD, m_vertices_mod.count);
+#endif
+
+	stats::Scope present_scope(stats::TIMER_CPU_PRESENT);
 	flushVertices();
 	setVertexFlagW(0);
+	closeOverlayRun();
 	m_command_buffer[m_frame_index].pushCommand(CommandType::Submit);
 
 	modules::HDText::Instance().update();
@@ -819,7 +935,10 @@ void Context::presentFrame()
 	ReleaseSemaphore(m_semaphore_cpu[m_frame_index], 1, NULL);
 	m_frame_index = (m_frame_index + 1) % (App.frame_latency + 1);
 
-	WaitForSingleObject(m_semaphore_gpu[m_frame_index], INFINITE);
+	{
+		stats::Scope gpu_wait_scope(stats::TIMER_CPU_GPU_WAIT);
+		WaitForSingleObject(m_semaphore_gpu[m_frame_index], INFINITE);
+	}
 	m_command_buffer[m_frame_index].reset();
 
 	QueryPerformanceCounter(&m_frame.time);
@@ -841,6 +960,31 @@ void Context::presentFrame()
 		m_frame.frame_sample_count += 1;
 	}
 	m_frame.frame_count++;
+	stats::frameDone(m_frame.frame_time);
+}
+
+void Context::ensureOverlayRun(uint8_t kind, uint8_t blend)
+{
+	if (m_overlay_open && m_overlay_open_kind == kind && m_overlay_open_blend == blend)
+		return;
+
+	closeOverlayRun();
+	m_overlay_open = true;
+	m_overlay_open_kind = kind;
+	m_overlay_open_blend = blend;
+	m_overlay_open_start = m_vertices_mod.count;
+}
+
+void Context::closeOverlayRun()
+{
+	if (!m_overlay_open)
+		return;
+
+	const uint32_t count = m_vertices_mod.count - m_overlay_open_start;
+	if (count > 0)
+		m_command_buffer[m_frame_index].addOverlayRun(m_overlay_open_start, count, m_overlay_open_blend);
+
+	m_overlay_open = false;
 }
 
 void Context::setViewport(glm::ivec2 size, glm::ivec2 offset)
@@ -856,9 +1000,48 @@ void Context::setViewport(glm::ivec2 size, glm::ivec2 offset)
 
 void Context::pushVertex(const GlideVertex* vertex, glm::vec2 fix, glm::ivec2 offset)
 {
+#ifdef _STATS
+	g_push_timer.enter();
+#endif
+
+	// Post-HD game content is routed into the overlay stream so it is replayed
+	// at viewport resolution after the HD content drawn before it. World content
+	// (monsters, tiles) is only replayed when an HD item was pushed somewhere
+	// (m_world_hd_occludable): re-rasterizing the whole scene costs too much when
+	// only damage-number text covers the screen. UI/HUD content (small) is always
+	// replayed for correct z-order with HD. Cursor-stage content (flags.w==10,
+	// the held item / game cursor) is drawn last, so it must stay on top of every
+	// overlay run. Map-stage content (flags.w 1/2) stays in the game FBO to keep
+	// the MAP attachment intact.
+	const auto stage = App.game.draw_stage;
+	if (m_top_pass_active && m_vertices_mod.count < MAX_VERTICES_MOD - 4 &&
+		(m_vertex_params.flags.w == 10 ||
+			(m_vertex_params.flags.w == 0 &&
+				(stage == DrawStage::UI || stage == DrawStage::HUD || m_world_hd_occludable)))) {
+		ensureOverlayRun(0, 1 + m_current_blend_index);
+		writeOverlayVertex(vertex, fix, offset);
+#ifdef _STATS
+		g_push_timer.exit();
+#endif
+		return;
+	}
+
+	// Game FBO path: pre-HD content, world content without an HD item, map-stage
+	// content, and cursor content when the overlay buffer is full.
+	if (m_vertex_params.flags.w == 10)
+		m_command_buffer[m_frame_index].m_has_mask = true;
+
 	if (m_vertices.count >= MAX_VERTICES - 4)
 		flushVertices();
 
+	writeGameVertex(vertex, fix, offset);
+#ifdef _STATS
+	g_push_timer.exit();
+#endif
+}
+
+void Context::writeGameVertex(const GlideVertex* vertex, glm::vec2 fix, glm::ivec2 offset)
+{
 	m_vertices.ptr->position = {
 		glm::detail::toFloat16(vertex->x - (float)offset.x),
 		glm::detail::toFloat16(vertex->y - (float)offset.y),
@@ -877,6 +1060,28 @@ void Context::pushVertex(const GlideVertex* vertex, glm::vec2 fix, glm::ivec2 of
 	m_frame.vertex_count++;
 }
 
+void Context::writeOverlayVertex(const GlideVertex* vertex, glm::vec2 fix, glm::ivec2 offset)
+{
+	VertexMod* dst = m_vertices_mod.ptr;
+	dst->position = {
+		glm::detail::toFloat16(vertex->x - (float)offset.x),
+		glm::detail::toFloat16(vertex->y - (float)offset.y),
+	};
+	dst->tex_coord = {
+		((float)((uint32_t)vertex->s >> m_vertex_params.tex_shift) + (float)m_vertex_params.offsets.x) / (512.0f + fix.x),
+		((float)((uint32_t)vertex->t >> m_vertex_params.tex_shift) + (float)m_vertex_params.offsets.y) / (512.0f + fix.y),
+	};
+	dst->color1 = vertex->pargb;
+	dst->color2 = m_vertex_params.color;
+	dst->tex_ids = m_vertex_params.tex_ids;
+	dst->flags = m_vertex_params.flags;
+	dst->extra = { glm::detail::toFloat16(-1.0f), 0 };
+
+	m_vertices_mod.ptr++;
+	m_vertices_mod.count++;
+	m_frame.vertex_count++;
+}
+
 void Context::flushVertices()
 {
 	if (m_vertices.count == 0)
@@ -887,6 +1092,7 @@ void Context::flushVertices()
 	m_vertices.start += m_vertices.count;
 	m_vertices.count = 0;
 	m_frame.drawcall_count++;
+	stats::addCount(stats::CTR_FLUSHES);
 }
 
 void Context::drawQuad(int8_t flag_x, int8_t flag_y, int16_t tex_id)
@@ -903,6 +1109,7 @@ void Context::drawQuad(int8_t flag_x, int8_t flag_y, int16_t tex_id)
 	}
 
 	glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(quad), &quad[0]);
+	stats::addCount(stats::CTR_DRAWCALLS);
 	glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 }
 
@@ -910,24 +1117,57 @@ void Context::pushObject(const std::unique_ptr<Object>& object)
 {
 	const auto vertices = object->getVertices();
 
+	// The first HD object activates the top pass: game content drawn before it
+	// stays in the game FBO, everything drawn after (HD and SD) is replayed in
+	// original order by the overlay pass at viewport resolution.
+	if (!m_top_pass_active) {
+		flushVertices();
+		m_top_pass_active = true;
+	}
+
+	// An external-texture HD object (flags.x==8: HD ground items / orbs) needs
+	// occlusion by monsters drawn after it, so world content is replayed that
+	// frame. Text (3), cursor (1), minimap (2/5) and gradients never set this:
+	// they sit on top of world content anyway.
+	if (vertices[0].flags.x == 8)
+		m_world_hd_occludable = true;
+
 	if (m_delay_push) {
+		if (m_vertices_late.count >= MAX_VERTICES_MOD - 4)
+			return;
+
 		memcpy(m_vertices_late.ptr, vertices, sizeof(VertexMod) * 4);
 
 		m_vertices_late.ptr += 4;
 		m_vertices_late.count += 4;
 	} else {
+		if (m_vertices_mod.count >= MAX_VERTICES_MOD - 4)
+			return;
+
+		ensureOverlayRun(1, 0);
+
 		memcpy(m_vertices_mod.ptr, vertices, sizeof(VertexMod) * 4);
 
 		m_vertices_mod.ptr += 4;
 		m_vertices_mod.count += 4;
 	}
 	m_frame.vertex_count += 4;
+	stats::addCount(stats::CTR_HD_OBJECTS);
 }
 
 void Context::appendDelayedObjects()
 {
 	if (m_vertices_late.count == 0)
 		return;
+
+	if (m_vertices_mod.count + m_vertices_late.count > MAX_VERTICES_MOD) {
+		m_delay_push = false;
+		m_vertices_late.count = 0;
+		m_vertices_late.ptr = m_vertices_late.data[0].data();
+		return;
+	}
+
+	ensureOverlayRun(1, 0);
 
 	memcpy(m_vertices_mod.ptr, m_vertices_late.data[0].data(), m_vertices_late.count * sizeof(VertexMod));
 

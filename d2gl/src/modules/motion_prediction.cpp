@@ -54,6 +54,31 @@ MotionPrediction::MotionPrediction()
 
 void MotionPrediction::toggle(bool active)
 {
+#ifdef _STATS
+	// _STATS: keep the unit/missile/weather draw detours installed permanently so
+	// stats can count units even when motion prediction itself is disabled. The
+	// stubs only set `currently_drawing_unit` (harmless while motion is off, the
+	// global is read only by isAvailable()==true paths) and feed stats counters.
+	if (!m_stubs_installed) {
+		DetourTransactionBegin();
+		DetourUpdateThread(GetCurrentThread());
+		DetourAttach(&(PVOID&)d2::drawUnit, isVerMax(V_110) || isVer(V_114d) ? d2::drawUnitStubESI : d2::drawUnitStubStack);
+		if (isVerNot(V_109d) && isVerNot(V_110))
+			DetourAttach(&(PVOID&)d2::drawMissile, d2::drawMissileStub);
+		DetourAttach(&(PVOID&)d2::drawWeatherParticles, isVer(V_114d) ? d2::drawWeatherParticlesStub114d : d2::drawWeatherParticlesStub);
+		DetourTransactionCommit();
+
+		m_stubs_installed = true;
+	}
+
+	if (m_active != active) {
+		m_active = active;
+		d2::patch_motion_prediction->toggle(m_active);
+	}
+
+	m_global_offset = { 0, 0 };
+	m_player_motion.offset = { 0, 0 };
+#else
 	if (!m_active && active) {
 		DetourTransactionBegin();
 		DetourUpdateThread(GetCurrentThread());
@@ -79,6 +104,7 @@ void MotionPrediction::toggle(bool active)
 	}
 	m_global_offset = { 0, 0 };
 	m_player_motion.offset = { 0, 0 };
+#endif
 }
 
 void MotionPrediction::update()

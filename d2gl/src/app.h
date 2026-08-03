@@ -23,6 +23,7 @@
 
 // #define _DEBUG 1
 // #define _HDTEXT 1
+// #define _STATS 1
 
 namespace d2gl {
 
@@ -74,6 +75,7 @@ struct D2GLApp {
 		bool dark_mode = true;
 		bool resized = false;
 		bool hide_title_bar = false;
+		bool active = true; // foreground (focused) window; false when tabbed out
 	} window;
 
 	struct {

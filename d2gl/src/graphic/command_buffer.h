@@ -65,6 +65,12 @@ struct HDTextMasking {
 	glm::vec4 metrics;
 };
 
+struct OverlayRun {
+	uint32_t start = 0;
+	uint32_t count = 0;
+	uint8_t blend = 0;
+};
+
 struct ExternalTexUpload {
 	uint8_t* pixels = nullptr;
 	uint32_t width = 0;
@@ -93,6 +99,9 @@ class CommandBuffer {
 	TexUpdateQueue m_tex_update_queue;
 	uint32_t m_vertex_count = 0;
 	uint32_t m_vertex_mod_count = 0;
+	std::array<OverlayRun, 4096> m_overlay_runs;
+	uint32_t m_overlay_run_count = 0;
+	bool m_has_mask = false;
 
 	GameScreen m_screen = GameScreen::InGame;
 
@@ -124,6 +133,7 @@ public:
 	void textureUpdate(uint8_t* data, uint16_t tex_num, glm::vec<2, uint16_t> size, glm::vec<2, uint16_t> offset);
 	void gameTextureUpdate(uint8_t* data, glm::vec<2, uint16_t> size, uint32_t bit = 1);
 	void setHDTextMasking(bool masking, glm::vec4 metrics);
+	void addOverlayRun(uint32_t start, uint32_t count, uint8_t blend);
 	void pushFontPage(ImageData& image, uint32_t layer, Texture* texture, uint32_t x, uint32_t y);
 };
 

@@ -28,6 +28,7 @@ Object::Object(glm::vec2 position, glm::vec2 size)
 		m_vertices[i].color1 = 0xFFFFFFFF;
 		m_vertices[i].color2 = 0xFFFFFFFF;
 		m_vertices[i].tex_ids = { 0, 0 };
+		m_vertices[i].extra = { 0, 0 };
 	}
 	setPosition(position);
 	setTexCoord({ 0.0f, 0.0f, 1.0f, 1.0f });

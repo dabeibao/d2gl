@@ -22,6 +22,7 @@
 #include "helpers.h"
 #include "modules/hd_text.h"
 #include "modules/motion_prediction.h"
+#include "modules/stats.h"
 #include "stubs.h"
 #include "hd_item.hpp"
 
@@ -236,6 +237,8 @@ static bool tryDrawHDItem(CellContext* cell, int x, int y, int draw_mode, uint8_
 
 void __stdcall drawImageHooked(CellContext* cell, int x, int y, uint32_t gamma, int draw_mode, uint8_t* palette)
 {
+	stats::addCount(stats::CTR_IMAGES);
+
 	if (App.hd_cursor && App.game.draw_stage >= DrawStage::Cursor)
 		return;
 
@@ -251,12 +254,14 @@ void __stdcall drawImageHooked(CellContext* cell, int x, int y, uint32_t gamma, 
 
 void __stdcall drawPerspectiveImageHooked(CellContext* cell, int x, int y, uint32_t gamma, int draw_mode, int screen_mode, uint8_t* palette)
 {
+	stats::addCount(stats::CTR_IMAGES);
 	const auto pos = modules::MotionPrediction::Instance().drawImage(x, y, D2DrawFn::PerspectiveImage);
 	drawPerspectiveImage(cell, pos.x, pos.y, gamma, draw_mode, screen_mode, palette);
 }
 
 void __stdcall drawShiftedImageHooked(CellContext* cell, int x, int y, uint32_t gamma, int draw_mode, int global_palette_shift)
 {
+	stats::addCount(stats::CTR_IMAGES);
 	if (modules::HDText::Instance().drawShiftedImage(cell, x, y)) {
 		auto pos = modules::MotionPrediction::Instance().drawImage(x, y, D2DrawFn::ShiftedImage);
 		drawShiftedImage(cell, pos.x, pos.y, gamma, draw_mode, global_palette_shift);
@@ -265,6 +270,7 @@ void __stdcall drawShiftedImageHooked(CellContext* cell, int x, int y, uint32_t 
 
 void __stdcall drawVerticalCropImageHooked(CellContext* cell, int x, int y, int skip_lines, int draw_lines, int draw_mode)
 {
+	stats::addCount(stats::CTR_IMAGES);
 	if (modules::HDText::Instance().isActive() && App.game.draw_stage >= DrawStage::UI) {
 		if (y < 150 || (*d2::screen_shift >= SCREENPANEL_LEFT && y < (int)*d2::screen_height - 100 && x < (int)*d2::screen_width / 2))
 			return;
@@ -276,24 +282,28 @@ void __stdcall drawVerticalCropImageHooked(CellContext* cell, int x, int y, int 
 
 void __stdcall drawClippedImageHooked(CellContext* cell, int x, int y, void* crop_rect, int draw_mode)
 {
+	stats::addCount(stats::CTR_IMAGES);
 	const auto pos = modules::MotionPrediction::Instance().drawImage(x, y, D2DrawFn::ClippedImage);
 	drawClippedImage(cell, pos.x, pos.y, crop_rect, draw_mode);
 }
 
 void __stdcall drawImageFastHooked(CellContext* cell, int x, int y, uint8_t palette_index)
 {
+	stats::addCount(stats::CTR_IMAGES);
 	const auto pos = modules::MotionPrediction::Instance().drawImage(x, y, D2DrawFn::ImageFast);
 	drawImageFast(cell, pos.x, pos.y, palette_index);
 }
 
 void __stdcall drawShadowHooked(CellContext* cell, int x, int y)
 {
+	stats::addCount(stats::CTR_SHADOWS);
 	const auto pos = modules::MotionPrediction::Instance().drawImage(x, y, D2DrawFn::Shadow);
 	drawShadow(cell, pos.x, pos.y);
 }
 
 void __stdcall drawSolidRectExHooked(int left, int top, int right, int bottom, uint32_t color, int draw_mode)
 {
+	stats::addCount(stats::CTR_RECTS);
 	auto offset = modules::MotionPrediction::Instance().drawSolidRect();
 	if (!modules::HDText::Instance().drawSolidRect(left - offset.x, top - offset.y, right - offset.x, bottom - offset.y, color, draw_mode))
 		drawSolidRectEx(left - offset.x, top - offset.y, right - offset.x, bottom - offset.y, color, draw_mode);
@@ -303,12 +313,15 @@ void __stdcall drawSolidRectExHooked(int left, int top, int right, int bottom, u
 
 void __stdcall drawLineHooked(int x_start, int y_start, int x_end, int y_end, uint8_t color, uint8_t alpha)
 {
+	stats::addCount(stats::CTR_LINES);
 	const auto offset = modules::MotionPrediction::Instance().drawLine(x_start, y_start);
 	drawLine(x_start - offset.x, y_start - offset.y, x_end - offset.x, y_end - offset.y, color, alpha);
 }
 
 bool __stdcall drawGroundTileHooked(TileContext* tile, GFXLight* light, int x, int y, int world_x, int world_y, uint8_t alpha, int screen_panels, bool tile_data)
 {
+	stats::addCount(stats::CTR_TILES);
+
 	// Drawing invisible tile crashes on glide mode.
 	if (ISGLIDE3X() && tile) {
 		const auto len = strlen(tile->szTileName);
@@ -325,18 +338,21 @@ bool __stdcall drawGroundTileHooked(TileContext* tile, GFXLight* light, int x, i
 
 bool __stdcall drawWallTileHooked(TileContext* tile, int x, int y, GFXLight* light, int screen_panels)
 {
+	stats::addCount(stats::CTR_TILES);
 	const auto offset = modules::MotionPrediction::Instance().getGlobalOffset(true);
 	return drawWallTile(tile, x - offset.x, y - offset.y, light, screen_panels);
 }
 
 bool __stdcall drawTransWallTileHooked(TileContext* tile, int x, int y, GFXLight* light, int screen_panels, uint8_t alpha)
 {
+	stats::addCount(stats::CTR_TILES);
 	const auto offset = modules::MotionPrediction::Instance().getGlobalOffset(true);
 	return drawTransWallTile(tile, x - offset.x, y - offset.y, light, screen_panels, alpha);
 }
 
 bool __stdcall drawShadowTileHooked(TileContext* tile, int x, int y, int draw_mode, int screen_panels)
 {
+	stats::addCount(stats::CTR_TILES);
 	const auto offset = modules::MotionPrediction::Instance().getGlobalOffset(true);
 	return drawShadowTile(tile, x - offset.x, y - offset.y, draw_mode, screen_panels);
 }
@@ -348,6 +364,8 @@ void __fastcall takeScreenShotHooked()
 
 void __fastcall drawNormalTextHooked(const wchar_t* str, int x, int y, uint32_t color, uint32_t centered)
 {
+	stats::addCount(stats::CTR_TEXTS);
+
 	// Glide mode light gray text appears black. So direct to dark gray.
 	if (ISGLIDE3X() && !App.hd_text.active && color == 15)
 		color = 5;
@@ -359,6 +377,7 @@ void __fastcall drawNormalTextHooked(const wchar_t* str, int x, int y, uint32_t 
 
 void __fastcall drawNormalTextExHooked(const wchar_t* str, int x, int y, uint32_t color, uint32_t centered, uint32_t trans_lvl)
 {
+	stats::addCount(stats::CTR_TEXTS);
 	const auto pos = modules::MotionPrediction::Instance().drawText(str, x, y, D2DrawFn::NormalTextEx);
 	if (!modules::HDText::Instance().drawText(str, pos.x, pos.y, color, centered, trans_lvl))
 		drawNormalTextEx(str, pos.x, pos.y, color, centered, trans_lvl);
@@ -366,6 +385,7 @@ void __fastcall drawNormalTextExHooked(const wchar_t* str, int x, int y, uint32_
 
 void __fastcall drawFramedTextHooked(const wchar_t* str, int x, int y, uint32_t color, uint32_t centered)
 {
+	stats::addCount(stats::CTR_TEXTS);
 	const auto pos = modules::MotionPrediction::Instance().drawText(str, x, y, D2DrawFn::FramedText);
 	if (!modules::HDText::Instance().drawFramedText(str, pos.x, pos.y, color, centered))
 		drawFramedText(str, pos.x, pos.y, color, centered);
@@ -373,6 +393,7 @@ void __fastcall drawFramedTextHooked(const wchar_t* str, int x, int y, uint32_t 
 
 void __fastcall drawRectangledTextHooked(const wchar_t* str, int x, int y, uint32_t rect_color, uint32_t rect_transparency, uint32_t color)
 {
+	stats::addCount(stats::CTR_TEXTS);
 	const auto pos = modules::MotionPrediction::Instance().drawText(str, x, y, D2DrawFn::RectangledText);
 	if (!modules::HDText::Instance().drawRectangledText(str, pos.x, pos.y, rect_transparency, color))
 		drawRectangledText(str, pos.x, pos.y, rect_color, rect_transparency, color);

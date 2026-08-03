@@ -34,7 +34,7 @@ namespace d2gl {
 #define MAX_FRAME_LATENCY 6
 #define MAX_INDICES 6 * 50000
 #define MAX_VERTICES 4 * 50000
-#define MAX_VERTICES_MOD 4 * 20000
+#define MAX_VERTICES_MOD 4 * 40000
 #define PIXEL_BUFFER_SIZE 12 * 1024 * 1024
 #define MAX_FRAMETIME_SAMPLE_COUNT 120
 
@@ -131,6 +131,21 @@ class Context {
 	uint32_t m_frame_index = 0;
 
 	bool m_delay_push = false;
+	// Top pass: after the first HD object is pushed, subsequent game (SD)
+	// content is routed into the overlay stream (m_vertices_mod) so HD and
+	// post-HD SD content can be replayed in original draw order at viewport
+	// resolution by the single overlay pass.
+	bool m_top_pass_active = false;
+	// Per-frame: a non-text HD object (e.g. an HD ground item) was pushed, so
+	// post-HD world content is replayed in the overlay and can occlude it.
+	// Damage-number text never sets this: it sits on top of monsters anyway, so
+	// the whole-scene viewport-resolution replay is avoided when there is no HD
+	// item to be occluded.
+	bool m_world_hd_occludable = false;
+	bool m_overlay_open = false;
+	uint8_t m_overlay_open_kind = 0;  // 0 = SD, 1 = HD
+	uint8_t m_overlay_open_blend = 0; // overlay pipeline attachment blend index
+	uint32_t m_overlay_open_start = 0;
 	Vertices<Vertex, MAX_VERTICES, MAX_FRAME_LATENCY> m_vertices;
 	Vertices<VertexMod, MAX_VERTICES_MOD, MAX_FRAME_LATENCY> m_vertices_mod;
 	Vertices<VertexMod, MAX_VERTICES_MOD, 1> m_vertices_late;
@@ -153,7 +168,7 @@ class Context {
 	std::unique_ptr<Pipeline> m_postfx_pipeline;
 	std::unique_ptr<Pipeline> m_fxaa_compute_pipeline;
 
-	std::unique_ptr<Pipeline> m_mod_pipeline;
+	std::unique_ptr<Pipeline> m_overlay_pipeline;
 	int m_current_shader = -1;
 
 	// Glide only
@@ -206,6 +221,10 @@ public:
 	inline void toggleDelayPush(bool delay) { m_delay_push = delay; }
 	void pushObject(const std::unique_ptr<Object>& object);
 	void appendDelayedObjects();
+	void ensureOverlayRun(uint8_t kind, uint8_t blend);
+	void closeOverlayRun();
+	void writeGameVertex(const GlideVertex* vertex, glm::vec2 fix, glm::ivec2 offset);
+	void writeOverlayVertex(const GlideVertex* vertex, glm::vec2 fix, glm::ivec2 offset);
 
 	inline void setVertexColor(uint32_t color) { m_vertex_params.color = color; }
 	inline void setVertexTexShift(uint8_t shift) { m_vertex_params.tex_shift = shift; }
@@ -229,6 +248,14 @@ public:
 
 	void imguiStartFrame();
 	void imguiRender();
+
+	// Render-thread helpers (called by renderThread; kept separate so each
+	// stats::Scope wraps a small body instead of a huge indented block).
+	void processUploads(CommandBuffer* cmd, uint32_t frame_index);
+	void processCommands(CommandBuffer* cmd, glm::ivec2 vp_size, glm::ivec2 vp_offset);
+	void processPreFx(CommandBuffer* cmd, uint32_t index);
+	void processSubmit(CommandBuffer* cmd, glm::ivec2 vp_size, glm::ivec2 vp_offset, uint32_t index);
+	void drawOverlay(CommandBuffer* cmd, uint32_t frame_index);
 
 private:
 	void resetFileTime();

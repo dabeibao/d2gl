@@ -31,6 +31,8 @@ void CommandBuffer::reset()
 	m_tex_update_queue.data_offset = 0;
 	m_vertex_count = 0;
 	m_vertex_mod_count = 0;
+	m_overlay_run_count = 0;
+	m_has_mask = false;
 	m_tex_update.bit = 0;
 
 	for (auto& upload : m_font_page_uploads) {
@@ -116,6 +118,14 @@ void CommandBuffer::setHDTextMasking(bool masking, glm::vec4 metrics)
 	m_hd_text_mask.active = true;
 	m_hd_text_mask.masking = masking;
 	m_hd_text_mask.metrics = metrics;
+}
+
+void CommandBuffer::addOverlayRun(uint32_t start, uint32_t count, uint8_t blend)
+{
+	if (count == 0 || m_overlay_run_count >= m_overlay_runs.size())
+		return;
+
+	m_overlay_runs[m_overlay_run_count++] = { start, count, blend };
 }
 
 void CommandBuffer::pushFontPage(ImageData& image, uint32_t layer, Texture* texture, uint32_t x, uint32_t y)
