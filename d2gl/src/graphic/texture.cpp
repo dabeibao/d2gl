@@ -28,7 +28,8 @@ GLuint current_binded_texture[32] = { UINT32_MAX };
 
 Texture::Texture(const TextureCreateInfo& info)
 	: m_width(info.size.x), m_height(info.size.y), m_layer_count(info.layer_count), m_internal_format(info.format.first), m_format(info.format.second),
-	  m_slot(info.slot), m_target(info.layer_count == 1 ? GL_TEXTURE_2D : GL_TEXTURE_2D_ARRAY), m_type(GL_UNSIGNED_BYTE), m_channel(info.format.first == GL_R8 ? 1 : 4)
+	  m_slot(info.slot), m_target(info.layer_count == 1 ? GL_TEXTURE_2D : GL_TEXTURE_2D_ARRAY), m_type(GL_UNSIGNED_BYTE), m_channel(info.format.first == GL_R8 ? 1 : 4),
+	  m_compressed(info.compressed)
 {
 	glGenTextures(1, &m_id);
 	bind(true);
@@ -100,6 +101,29 @@ void Texture::fill(const uint8_t* pixels, uint32_t width, uint32_t height, uint3
 		glTexSubImage2D(m_target, 0, offset_x, offset_y, width, height, m_format, m_type, pixels);
 	else
 		glTexSubImage3D(m_target, 0, offset_x, offset_y, layer, width, height, 1, m_format, m_type, pixels);
+}
+
+void Texture::fillCompressed(const uint8_t* data, uint32_t width, uint32_t height, uint32_t offset_x, uint32_t offset_y, uint32_t layer)
+{
+	if (layer >= m_layer_count) {
+		error_log("[Texture] fillCompressed layer %u out of bounds (max: %u)", layer, m_layer_count - 1);
+		return;
+	}
+
+	bind(true);
+
+	if (m_sparse && layer >= m_committed_layers)
+		commitLayer(layer);
+
+	// DXT5/BC3: 16 bytes per 4x4 block.
+	uint32_t blocks_x = (width + 3) / 4;
+	uint32_t blocks_y = (height + 3) / 4;
+	GLsizei data_size = (GLsizei)(blocks_x * blocks_y * 16);
+
+	if (m_target == GL_TEXTURE_2D)
+		glCompressedTexSubImage2D(m_target, 0, offset_x, offset_y, width, height, m_internal_format, data_size, data);
+	else
+		glCompressedTexSubImage3D(m_target, 0, offset_x, offset_y, layer, width, height, 1, m_internal_format, data_size, data);
 }
 
 void Texture::fillFromBuffer(const std::unique_ptr<FrameBuffer>& fbo, uint32_t index)

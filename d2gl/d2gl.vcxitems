@@ -132,6 +132,7 @@
     <ClInclude Include="$(MSBuildThisFileDirectory)src\types.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)src\win32.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)vendor\include\stb\stb_image_write.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)vendor\include\stb\stb_dxt.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="$(MSBuildThisFileDirectory)src\graphic\shaders\ddraw.glsl" />

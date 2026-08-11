@@ -62,7 +62,7 @@ public:
 	~ExternalTextureManager() = default;
 
 	uint32_t loadTexture(const char* png_path, uint32_t* out_width, uint32_t* out_height);
-	uint32_t loadTextureRGBA(const uint8_t* pixels, uint32_t width, uint32_t height, uint32_t* out_width = nullptr, uint32_t* out_height = nullptr);
+	uint32_t loadTextureRGBA(const uint8_t* pixels, uint32_t width, uint32_t height, uint32_t* out_width = nullptr, uint32_t* out_height = nullptr, bool already_compressed = false);
 	void drawTexture(uint32_t handle, float x, float y, uint32_t color, uint8_t color_idx = 0, float zoom = 1.0f);
 	void drawTexture(uint32_t handle, float x, float y, float w, float h, uint32_t color, uint8_t color_idx = 0);
 	void releaseTexture(uint32_t handle);

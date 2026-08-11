@@ -78,6 +78,7 @@ struct ExternalTexUpload {
 	uint32_t layer = 0;
 	uint32_t offset_x = 0;
 	uint32_t offset_y = 0;
+	bool compressed = false;
 };
 
 struct FontPageUpload {

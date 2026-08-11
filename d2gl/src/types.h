@@ -93,6 +93,11 @@ struct ImageData {
 	int height = 0;
 	int bit = 0;
 	uint8_t* data = nullptr;
+	// When true, `data` holds raw DXT5/BC3 compressed bytes (16 bytes per
+	// 4x4 block); `width`/`height` are the logical pixel dimensions (may
+	// not be multiples of 4 — the buffer covers ceil(w/4)*ceil(h/4) blocks).
+	// `bit` is unused in this mode.
+	bool compressed = false;
 };
 
 template <typename T>

@@ -500,7 +500,7 @@ static void decodeDXT5Block(const uint8_t* block, int x, int y, int w, int h, ui
 	}
 }
 
-static ImageData decodeDXT5(const uint8_t* input, int width, int height, size_t input_size)
+ImageData decodeDXT5(const uint8_t* input, int width, int height, size_t input_size)
 {
 	ImageData image = { width, height, 4, nullptr };
 	image.data = (uint8_t*)malloc((size_t)width * height * 4);
@@ -578,8 +578,14 @@ ImageData loadSpriteFromMemory(const uint8_t* data, size_t size)
 		if (size - data_offset < expected_dxt)
 			return image;
 
-		auto decoded = decodeDXT5(data + data_offset, width, height, size - data_offset);
-		src_data = decoded.data;
+		// Keep the original DXT5 byte stream — the GPU can sample it
+		// directly. Going through decodeDXT5() here would force a
+		// decompress/recompress round-trip in the caller, wasting CPU and
+		// accumulating BC3 quantization error.
+		src_data = (uint8_t*)malloc(expected_dxt);
+		if (src_data)
+			memcpy(src_data, data + data_offset, expected_dxt);
+		image.compressed = true;
 	}
 
 	if (!src_data)

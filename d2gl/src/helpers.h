@@ -77,6 +77,10 @@ ImageData loadSprite(const std::string& file_path);
 ImageData loadSpriteFromMemory(const uint8_t* data, size_t size);
 bool loadSpriteInfo(const uint8_t* data, size_t size, int& total_width, int& height, uint32_t& frame_count);
 
+// Decode a DXT5/BC3 byte stream into RGBA8. Output is malloc'd and
+// must be released with clearImage() (or free).
+ImageData decodeDXT5(const uint8_t* input, int width, int height, size_t input_size);
+
 void clearImage(ImageData& image);
 bool imageInfo(const std::string& file_path, int * x, int * y);
 

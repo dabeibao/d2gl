@@ -39,6 +39,7 @@ struct TextureCreateInfo {
 	std::pair<GLint, GLint> wrap_mode = { GL_CLAMP_TO_EDGE, GL_CLAMP_TO_EDGE };
 	bool mip_map = false;
 	bool use_sparse = false;
+	bool compressed = false;
 };
 
 class Texture {
@@ -50,6 +51,7 @@ class Texture {
 	uint32_t m_next_layer_index = 0;
 	uint32_t m_index_count = 1;
 	bool m_sparse = false;
+	bool m_compressed = false;
 	uint32_t m_committed_layers = 0;
 
 public:
@@ -65,6 +67,7 @@ public:
 	void bindImage(uint32_t unit = 0);
 
 	void fill(const uint8_t* pixels, uint32_t width, uint32_t height, uint32_t offset_x = 0, uint32_t offset_y = 0, uint32_t layer = 0);
+	void fillCompressed(const uint8_t* data, uint32_t width, uint32_t height, uint32_t offset_x = 0, uint32_t offset_y = 0, uint32_t layer = 0);
 	void fillFromBuffer(const std::unique_ptr<FrameBuffer>& fbo, uint32_t index = 0);
 	TextureData fillImage(ImageData image, uint32_t div_x = 1, uint32_t div_y = 1);
 	void fillImages(std::vector<ImageData>& images);

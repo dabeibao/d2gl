@@ -346,6 +346,8 @@ Context::Context()
 	external_tex_ci.slot = TEXTURE_SLOT_EXTERNAL;
 	external_tex_ci.filter = { GL_NEAREST, GL_NEAREST };
 	external_tex_ci.use_sparse = true;
+	external_tex_ci.format = { GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT };
+	external_tex_ci.compressed = true;
 	m_external_texture = Context::createTexture(external_tex_ci);
 
 	onResize(App.window.size, App.game.size);
@@ -494,7 +496,10 @@ void Context::processUploads(CommandBuffer* cmd, uint32_t frame_index)
 	for (auto& upload : cmd->m_external_tex_uploads) {
 		stats::Scope upload_tex(stats::TIMER_GPU_UPLOAD_TEX);
 		stats::addCount(stats::CTR_EXTERNAL_UPLOADS);
-		m_external_texture->fill(upload.pixels, upload.width, upload.height, upload.offset_x, upload.offset_y, upload.layer);
+		if (upload.compressed)
+			m_external_texture->fillCompressed(upload.pixels, upload.width, upload.height, upload.offset_x, upload.offset_y, upload.layer);
+		else
+			m_external_texture->fill(upload.pixels, upload.width, upload.height, upload.offset_x, upload.offset_y, upload.layer);
 		delete[] upload.pixels;
 		upload.pixels = nullptr;
 	}
@@ -1179,17 +1184,21 @@ void Context::appendDelayedObjects()
 	m_vertices_late.ptr = m_vertices_late.data[0].data();
 }
 
-void Context::queueExternalTexUpload(uint32_t layer, const uint8_t* pixels, uint32_t width, uint32_t height, uint32_t offset_x, uint32_t offset_y)
+void Context::queueExternalTexUpload(uint32_t layer, const uint8_t* pixels, uint32_t width, uint32_t height, uint32_t offset_x, uint32_t offset_y, bool compressed)
 {
 	auto& cmd = m_command_buffer[m_frame_index];
 	ExternalTexUpload upload;
-	upload.pixels = new uint8_t[width * height * 4];
-	memcpy(upload.pixels, pixels, width * height * 4);
+	size_t pixel_bytes = compressed
+		? (size_t)(((width + 3) / 4) * ((height + 3) / 4) * 16)
+		: (size_t)width * height * 4;
+	upload.pixels = new uint8_t[pixel_bytes];
+	memcpy(upload.pixels, pixels, pixel_bytes);
 	upload.width = width;
 	upload.height = height;
 	upload.layer = layer;
 	upload.offset_x = offset_x;
 	upload.offset_y = offset_y;
+	upload.compressed = compressed;
 	cmd.m_external_tex_uploads.push_back(upload);
 }
 

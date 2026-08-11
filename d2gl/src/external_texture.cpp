@@ -24,6 +24,9 @@
 #include "graphic/object.h"
 #include "helpers.h"
 
+#define STB_DXT_IMPLEMENTATION
+#include "stb/stb_dxt.h"
+
 #pragma comment(lib, "shlwapi.lib")
 namespace d2gl {
 
@@ -129,7 +132,7 @@ bool ExternalTextureManager::placeInAtlas(uint16_t w, uint16_t h, uint16_t& out_
 	return true;
 }
 
-uint32_t ExternalTextureManager::loadTextureRGBA(const uint8_t* pixels, uint32_t width, uint32_t height, uint32_t* out_width, uint32_t* out_height)
+uint32_t ExternalTextureManager::loadTextureRGBA(const uint8_t* pixels, uint32_t width, uint32_t height, uint32_t* out_width, uint32_t* out_height, bool already_compressed)
 {
 	if (!m_ctx.m_external_texture || !pixels) {
 		if (out_width) *out_width = 0;
@@ -149,10 +152,16 @@ uint32_t ExternalTextureManager::loadTextureRGBA(const uint8_t* pixels, uint32_t
 		return 0;
 	}
 
+	// DXT5/BC3 compresses in 4x4 pixel blocks. Pad the stored w/h up to a
+	// multiple of 4 so the upload covers full blocks; the texture coords
+	// computed from the original w/h still crop the padding out.
 	uint32_t w = width;
 	uint32_t h = height;
 	if (w > ATLAS_SIZE) w = ATLAS_SIZE;
 	if (h > ATLAS_SIZE) h = ATLAS_SIZE;
+
+	uint32_t bw = (w + 3) & ~3u;
+	uint32_t bh = (h + 3) & ~3u;
 
 	if (out_width) *out_width = w;
 	if (out_height) *out_height = h;
@@ -167,21 +176,79 @@ uint32_t ExternalTextureManager::loadTextureRGBA(const uint8_t* pixels, uint32_t
 		if (layer >= 128)
 			return 0;
 	} else {
-		if (!placeInAtlas((uint16_t)w, (uint16_t)h, layer, offset_x, offset_y))
+		if (!placeInAtlas((uint16_t)bw, (uint16_t)bh, layer, offset_x, offset_y))
 			return 0;
 		is_atlas = true;
 	}
 
-	const uint8_t* upload_pixels = pixels;
-	auto clipped = std::unique_ptr<uint8_t[]>();
-	if (w != width || h != height) {
-		clipped = std::make_unique<uint8_t[]>(w * h * 4);
-		for (uint32_t y = 0; y < h; y++)
-			memcpy(clipped.get() + y * w * 4, pixels + y * width * 4, w * 4);
-		upload_pixels = clipped.get();
+	std::unique_ptr<uint8_t[]> compressed_buf;
+	const uint8_t* upload_data = nullptr;
+	uint32_t upload_w = bw, upload_h = bh;
+
+	if (already_compressed) {
+		// Caller handed us a DXT5 byte stream already (e.g. sprite v61).
+		// Pass it straight through; no re-compress, no quality loss.
+		// Only safe when the source block grid matches the destination
+		// slot exactly (no ATLAS_SIZE clipping) — otherwise the bytes
+		// won't line up with the upload region. Bail out and let the
+		// caller (loadTexture) decode to RGBA and retry.
+		uint32_t src_bcw = (width + 3) / 4;
+		uint32_t src_bch = (height + 3) / 4;
+		if (src_bcw == bw / 4 && src_bch == bh / 4 && w == width && h == height) {
+			upload_data = pixels;
+		} else {
+			if (!is_atlas)
+				freeLayer(layer);
+			m_free_slots.push_back(slot);
+			if (out_width) *out_width = 0;
+			if (out_height) *out_height = 0;
+			return 0;
+		}
 	}
 
-	m_ctx.queueExternalTexUpload(layer, const_cast<uint8_t*>(upload_pixels), w, h, offset_x, offset_y);
+	if (!already_compressed) {
+		// Build a 4-byte-aligned RGBA source buffer covering [0..bw) x [0..bh).
+		// Pixels outside the original (w,h) are padded by replicating the edge
+		// so the DXT5 endpoints stay sensible.
+		auto src = std::make_unique<uint8_t[]>((size_t)bw * bh * 4);
+		for (uint32_t y = 0; y < bh; y++) {
+			uint32_t sy = (y < h) ? y : (h - 1);
+			for (uint32_t x = 0; x < bw; x++) {
+				uint32_t sx = (x < w) ? x : (w - 1);
+				const uint8_t* p;
+				if (sx < width && sy < height)
+					p = pixels + (sy * width + sx) * 4;
+				else if (sx < width)
+					p = pixels + ((height - 1) * width + sx) * 4;
+				else if (sy < height)
+					p = pixels + (sy * width + (width - 1)) * 4;
+				else
+					p = pixels + ((height - 1) * width + (width - 1)) * 4;
+				memcpy(src.get() + (y * bw + x) * 4, p, 4);
+			}
+		}
+
+		// Compress to DXT5 (BC3): 16 bytes per 4x4 block.
+		uint32_t blocks_x = bw / 4;
+		uint32_t blocks_y = bh / 4;
+		size_t compressed_size = (size_t)blocks_x * blocks_y * 16;
+		compressed_buf = std::make_unique<uint8_t[]>(compressed_size);
+
+		for (uint32_t by = 0; by < blocks_y; by++) {
+			for (uint32_t bx = 0; bx < blocks_x; bx++) {
+				uint8_t block_rgba[16 * 4];
+				for (uint32_t py = 0; py < 4; py++) {
+					memcpy(block_rgba + py * 4 * 4,
+					       src.get() + ((by * 4 + py) * bw + bx * 4) * 4,
+					       4 * 4);
+				}
+				stb_compress_dxt_block(compressed_buf.get() + (by * blocks_x + bx) * 16, block_rgba, 1, STB_DXT_NORMAL);
+			}
+		}
+		upload_data = compressed_buf.get();
+	}
+
+	m_ctx.queueExternalTexUpload(layer, upload_data, upload_w, upload_h, offset_x, offset_y, true);
 
 	auto& s = m_slots[slot];
 	s.in_use = true;
@@ -203,7 +270,7 @@ uint32_t ExternalTextureManager::loadTexture(const char* png_path, uint32_t* out
 		return 0;
 	}
 
-	ImageData src = { 0 };
+ImageData src = { 0 };
 	if (strlen(png_path) > 7 && _stricmp(png_path + strlen(png_path) - 7, ".sprite") == 0) {
 		src = helpers::loadSprite(png_path);
 	} else {
@@ -218,7 +285,22 @@ uint32_t ExternalTextureManager::loadTexture(const char* png_path, uint32_t* out
 		return 0;
 	}
 
-	uint32_t handle = loadTextureRGBA(src.data, src.width, src.height, out_width, out_height);
+	uint32_t handle = loadTextureRGBA(src.data, src.width, src.height, out_width, out_height, src.compressed);
+
+	// Compressed pass-through failed (e.g. sprite larger than ATLAS_SIZE).
+	// Decode the DXT5 stream to RGBA and retry via the normal re-compress
+	// path so oversized sprites still load, matching pre-DXT5 behavior.
+	if (handle == 0 && src.compressed) {
+		size_t bcw = (src.width + 3) / 4;
+		size_t bch = (src.height + 3) / 4;
+		size_t dxt_bytes = bcw * bch * 16;
+		ImageData decoded = helpers::decodeDXT5(src.data, src.width, src.height, dxt_bytes);
+		if (decoded.data) {
+			handle = loadTextureRGBA(decoded.data, decoded.width, decoded.height, out_width, out_height, false);
+			helpers::clearImage(decoded);
+		}
+	}
+
 	helpers::clearImage(src);
 	return handle;
 }

@@ -244,7 +244,7 @@ public:
 	void toggleVsync();
 	void setFpsLimit(bool active, int max_fps);
 	void takeScreenShot();
-	void queueExternalTexUpload(uint32_t layer, const uint8_t* pixels, uint32_t width, uint32_t height, uint32_t offset_x = 0, uint32_t offset_y = 0);
+	void queueExternalTexUpload(uint32_t layer, const uint8_t* pixels, uint32_t width, uint32_t height, uint32_t offset_x = 0, uint32_t offset_y = 0, bool compressed = false);
 
 	void imguiStartFrame();
 	void imguiRender();
