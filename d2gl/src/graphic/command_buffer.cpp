@@ -7,7 +7,7 @@ namespace d2gl {
 
 CommandBuffer::CommandBuffer()
 {
-	m_tex_buffer = new uint8_t[PIXEL_BUFFER_SIZE];
+	m_tex_buffer.reserve(PIXEL_BUFFER_SIZE);
 	reset();
 }
 
@@ -19,7 +19,6 @@ CommandBuffer::~CommandBuffer()
 	}
 	for (auto& upload : m_external_tex_uploads)
 		delete[] upload.pixels;
-	delete[] m_tex_buffer;
 }
 
 void CommandBuffer::reset()
@@ -87,7 +86,11 @@ void CommandBuffer::colorUpdate(UBOType type, const void* data)
 void CommandBuffer::textureUpdate(uint8_t* data, uint16_t tex_num, glm::vec<2, uint16_t> size, glm::vec<2, uint16_t> offset)
 {
 	const uint32_t data_size = size.x * size.y;
-	memcpy((void*)((uint32_t)m_tex_buffer + m_tex_update_queue.data_offset), data, data_size);
+	const size_t new_offset = m_tex_update_queue.data_offset + data_size;
+	if (m_tex_buffer.size() < new_offset)
+		m_tex_buffer.resize(std::max(new_offset, m_tex_buffer.capacity()));
+
+	memcpy(m_tex_buffer.data() + m_tex_update_queue.data_offset, data, data_size);
 
 	auto tex_data = m_tex_update_queue.alloc();
 	tex_data->offset = m_tex_update_queue.data_offset;
@@ -100,7 +103,11 @@ void CommandBuffer::textureUpdate(uint8_t* data, uint16_t tex_num, glm::vec<2, u
 
 void CommandBuffer::gameTextureUpdate(uint8_t* data, glm::vec<2, uint16_t> size, uint32_t bit)
 {
-	memcpy(m_tex_buffer, data, size.x * size.y * bit);
+	const uint32_t data_size = size.x * size.y * bit;
+	if (m_tex_buffer.size() < data_size)
+		m_tex_buffer.resize(std::max((size_t)data_size, m_tex_buffer.capacity()));
+
+	memcpy(m_tex_buffer.data(), data, data_size);
 	m_tex_update.bit = bit;
 	m_tex_update.size = size;
 }

@@ -116,7 +116,7 @@ class CommandBuffer {
 	glm::uvec2 m_game_size = { 0, 0 };
 	uint32_t m_game_tex_bpp = 8;
 
-	uint8_t* m_tex_buffer = nullptr;
+	std::vector<uint8_t> m_tex_buffer;
 	GameTexUpdate m_tex_update;
 	HDTextMasking m_hd_text_mask;
 	std::vector<FontPageUpload> m_font_page_uploads;

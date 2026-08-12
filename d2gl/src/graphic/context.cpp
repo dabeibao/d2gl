@@ -480,7 +480,7 @@ void Context::processUploads(CommandBuffer* cmd, uint32_t frame_index)
 		stats::addCount(stats::CTR_TEX_UPDATES, cmd->m_tex_update_queue.tex_data.size());
 		stats::addBytes(stats::CTR_TEX_BYTES, cmd->m_tex_update_queue.data_offset);
 		glBindBuffer(GL_PIXEL_UNPACK_BUFFER, m_pixel_buffer);
-		glBufferSubData(GL_PIXEL_UNPACK_BUFFER, 0, cmd->m_tex_update_queue.data_offset, cmd->m_tex_buffer);
+		glBufferSubData(GL_PIXEL_UNPACK_BUFFER, 0, cmd->m_tex_update_queue.data_offset, cmd->m_tex_buffer.data());
 		for (size_t i = 0; i < cmd->m_tex_update_queue.tex_data.size(); i++) {
 			const auto data = &cmd->m_tex_update_queue.tex_data[i];
 			m_glide_texture->fill((uint8_t*)data->offset, data->tex_size.x, data->tex_size.y, data->tex_offset.x, data->tex_offset.y, data->tex_num);
@@ -514,7 +514,7 @@ void Context::processUploads(CommandBuffer* cmd, uint32_t frame_index)
 		stats::addCount(stats::CTR_TEX_UPDATES);
 		stats::addBytes(stats::CTR_TEX_BYTES, cmd->m_tex_update.size.x * cmd->m_tex_update.size.y * cmd->m_tex_update.bit);
 		glBindBuffer(GL_PIXEL_UNPACK_BUFFER, m_pixel_buffer);
-		glBufferSubData(GL_PIXEL_UNPACK_BUFFER, 0, cmd->m_tex_update.size.x * cmd->m_tex_update.size.y * cmd->m_tex_update.bit, cmd->m_tex_buffer);
+		glBufferSubData(GL_PIXEL_UNPACK_BUFFER, 0, cmd->m_tex_update.size.x * cmd->m_tex_update.size.y * cmd->m_tex_update.bit, cmd->m_tex_buffer.data());
 		m_game_texture->fill(0, cmd->m_tex_update.size.x, cmd->m_tex_update.size.y);
 		glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
 	}
