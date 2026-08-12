@@ -143,6 +143,12 @@ float Font::drawChar(wchar_t c, glm::vec2 pos, uint32_t color)
 		if (c == L' ')
 			return glyph->advance * m_scale;
 
+		// Skip rendering if the glyph's page hasn't been loaded yet
+		// (tex_id == 0xFFFF sentinel from pre-population). Return the
+		// correct advance so text layout stays valid.
+		if (glyph->tex_id == 0xFFFF)
+			return glyph->advance * m_scale;
+
 		glm::vec2 object_pos = pos + glyph->offset * m_scale;
 		float weight = m_weight;
 		if (m_glyph_set->isSymbol()) {

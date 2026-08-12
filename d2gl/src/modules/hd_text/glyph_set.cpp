@@ -128,33 +128,69 @@ void GlyphSet::initLoadPages(const std::vector<int>& pages)
 const Glyph* GlyphSet::getGlyph(wchar_t c)
 {
 	m_is_symbol = false;
-	if (m_glyphes.find(c) != m_glyphes.end())
-		return &m_glyphes[c];
 
+	// Normalize non-breaking space to regular space
 	if (c == L'\xa0')
-		return &m_glyphes[L' '];
+		c = L' ';
 
-	auto it = m_glyph_page.find(c);
-	if (it != m_glyph_page.end()) {
-		int page = it->second;
+	auto it = m_glyphes.find(c);
+	if (it != m_glyphes.end())
+		return &it->second;
+
+	// Char not in m_glyphes yet. If it's a known char, lazily insert a
+	// placeholder (tex_id=0xFFFF) with metrics from the parsed CSV so
+	// Font::getTextSize returns correct widths before the page PNG loads.
+	// pollCompletions/initLoadPages will overwrite it with real tex data.
+	auto page_it = m_glyph_page.find(c);
+	if (page_it != m_glyph_page.end()) {
+		int page = page_it->second;
+		for (const auto& [cc, g] : m_page_glyphs[page]) {
+			if (cc == c) {
+				Glyph placeholder = g;
+				placeholder.tex_id = 0xFFFF;
+				m_glyphes[cc] = placeholder;
+				break;
+			}
+		}
 		if (m_page_states[page] == PageState::NOT_LOADED)
 			loadPageAsync(page);
 
-		if (m_page_states[page] != PageState::LOADED)
-			return nullptr;
+		auto it2 = m_glyphes.find(c);
+		if (it2 != m_glyphes.end())
+			return &it2->second;
 	}
 
+	// Symbol fallback
 	if (m_symbols) {
 		m_is_symbol = true;
-		if (m_symbols->find(c) != m_symbols->end())
-			return &m_symbols->at(c);
+		auto sit = m_symbols->find(c);
+		if (sit != m_symbols->end())
+			return &sit->second;
 
-		if (c > 0x20)
-			return &m_symbols->at(L'☹');
+		if (c > 0x20) {
+			auto unk_it = m_symbols->find(L'☹');
+			if (unk_it != m_symbols->end())
+				return &unk_it->second;
+		}
 	}
 
-	if (c > 0x20)
-		return &m_glyphes[L'?'];
+	// Unknown char (not in m_glyph_page, not in m_symbols). Cache a dummy
+	// glyph (advance=0, tex_id=0xFFFF) under this char so future queries
+	// hit m_glyphes.find() at the top and short-circuit, skipping the
+	// expensive m_glyph_page / m_symbols lookups above. Returns nullptr
+	// so drawChar skips this char this frame; next call returns &dummy
+	// (via the early find check), and drawChar's tex_id==0xFFFF check
+	// also returns advance=0 — no rendering either way.
+	//
+	// We don't cache a copy of m_glyphes[L'?'] because '?' may itself
+	// still be a placeholder (tex_id=0xFFFF) at this point; a cached
+	// copy would never be updated by pollCompletions, leaving the
+	// unknown char stuck as a placeholder forever.
+	if (c > 0x20) {
+		Glyph dummy{};
+		dummy.tex_id = 0xFFFF;
+		m_glyphes[c] = dummy;
+	}
 
 	return nullptr;
 }
