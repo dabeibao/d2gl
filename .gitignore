@@ -368,3 +368,9 @@ FodyWeavers.xsd
 /d2gl.props
 !/d2gl/vendor/lib/Debug/
 !/d2gl/vendor/lib/Release/
+
+GTAGS
+GRTAGS
+GPATH
+.editorconfig
+/compile_commands.json
