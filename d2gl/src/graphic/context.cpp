@@ -475,13 +475,13 @@ void Context::processUploads(CommandBuffer* cmd, uint32_t frame_index)
 		glBufferSubData(GL_ARRAY_BUFFER, 0, cmd->m_vertex_count * sizeof(Vertex), m_vertices.data[frame_index].data());
 	}
 
-	if (cmd->m_tex_update_queue.count) {
+	if (!cmd->m_tex_update_queue.tex_data.empty()) {
 		stats::Scope upload_tex(stats::TIMER_GPU_UPLOAD_TEX);
-		stats::addCount(stats::CTR_TEX_UPDATES, cmd->m_tex_update_queue.count);
+		stats::addCount(stats::CTR_TEX_UPDATES, cmd->m_tex_update_queue.tex_data.size());
 		stats::addBytes(stats::CTR_TEX_BYTES, cmd->m_tex_update_queue.data_offset);
 		glBindBuffer(GL_PIXEL_UNPACK_BUFFER, m_pixel_buffer);
 		glBufferSubData(GL_PIXEL_UNPACK_BUFFER, 0, cmd->m_tex_update_queue.data_offset, cmd->m_tex_buffer);
-		for (uint32_t i = 0; i < cmd->m_tex_update_queue.count; i++) {
+		for (size_t i = 0; i < cmd->m_tex_update_queue.tex_data.size(); i++) {
 			const auto data = &cmd->m_tex_update_queue.tex_data[i];
 			m_glide_texture->fill((uint8_t*)data->offset, data->tex_size.x, data->tex_size.y, data->tex_offset.x, data->tex_offset.y, data->tex_num);
 		}

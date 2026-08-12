@@ -34,13 +34,15 @@ struct TexData {
 };
 
 struct TexUpdateQueue {
-	uint32_t count = 0;
 	uint32_t data_offset = 0;
 	std::vector<TexData> tex_data;
 
-	void reserve(size_t cap) { tex_data.reserve(cap); }
-	void reset() { count = 0; data_offset = 0; }
-	TexData* alloc() { return &tex_data[count++]; }
+	TexData* alloc()
+	{
+		auto& td = tex_data.emplace_back();
+		return &td;
+	}
+	void reset() { tex_data.clear(); data_offset = 0; }
 };
 
 enum class UBOType {
