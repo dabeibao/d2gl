@@ -24,14 +24,13 @@ CommandBuffer::~CommandBuffer()
 
 void CommandBuffer::reset()
 {
-	m_count = 0;
-	m_command = &m_commands[0];
+	m_commands.clear();
 	m_ubo_update_queue.count = 0;
-	m_tex_update_queue.count = 0;
-	m_tex_update_queue.data_offset = 0;
+	m_tex_update_queue.reset();
+	m_overlay_runs.clear();
+	m_overlay_run_count = 0;
 	m_vertex_count = 0;
 	m_vertex_mod_count = 0;
-	m_overlay_run_count = 0;
 	m_has_mask = false;
 	m_tex_update.bit = 0;
 
@@ -51,26 +50,20 @@ void CommandBuffer::reset()
 	m_resized = false;
 }
 
-inline void CommandBuffer::next()
-{
-	m_command++;
-	m_count++;
-}
-
 void CommandBuffer::pushCommand(CommandType type, uint32_t index)
 {
-	m_command->type = type;
-	m_command->index = index;
-	next();
+	auto& cmd = m_commands.emplace_back();
+	cmd.type = type;
+	cmd.index = index;
 }
 
 void CommandBuffer::drawIndexed(uint32_t start, uint32_t count)
 {
 	m_vertex_count += count;
-	m_command->type = CommandType::DrawIndexed;
-	m_command->draw.start = start;
-	m_command->draw.count = count / 4 * 6;
-	next();
+	auto& cmd = m_commands.emplace_back();
+	cmd.type = CommandType::DrawIndexed;
+	cmd.draw.start = start;
+	cmd.draw.count = count / 4 * 6;
 }
 
 void CommandBuffer::resize()
@@ -86,9 +79,9 @@ void CommandBuffer::colorUpdate(UBOType type, const void* data)
 	memcpy(m_ubo_update_queue.data[m_ubo_update_queue.count].value, data, sizeof(glm::vec4) * 256);
 	m_ubo_update_queue.data[m_ubo_update_queue.count].type = type;
 
-	m_command->type = CommandType::UBOUpdate;
-	m_command->index = m_ubo_update_queue.count++;
-	next();
+	auto& cmd = m_commands.emplace_back();
+	cmd.type = CommandType::UBOUpdate;
+	cmd.index = m_ubo_update_queue.count++;
 }
 
 void CommandBuffer::textureUpdate(uint8_t* data, uint16_t tex_num, glm::vec<2, uint16_t> size, glm::vec<2, uint16_t> offset)
@@ -96,14 +89,13 @@ void CommandBuffer::textureUpdate(uint8_t* data, uint16_t tex_num, glm::vec<2, u
 	const uint32_t data_size = size.x * size.y;
 	memcpy((void*)((uint32_t)m_tex_buffer + m_tex_update_queue.data_offset), data, data_size);
 
-	auto tex_data = &m_tex_update_queue.tex_data[m_tex_update_queue.count];
+	auto tex_data = m_tex_update_queue.alloc();
 	tex_data->offset = m_tex_update_queue.data_offset;
 	tex_data->tex_num = tex_num;
 	tex_data->tex_size = size;
 	tex_data->tex_offset = offset;
 
 	m_tex_update_queue.data_offset += data_size;
-	m_tex_update_queue.count++;
 }
 
 void CommandBuffer::gameTextureUpdate(uint8_t* data, glm::vec<2, uint16_t> size, uint32_t bit)
@@ -122,10 +114,11 @@ void CommandBuffer::setHDTextMasking(bool masking, glm::vec4 metrics)
 
 void CommandBuffer::addOverlayRun(uint32_t start, uint32_t count, uint8_t blend)
 {
-	if (count == 0 || m_overlay_run_count >= m_overlay_runs.size())
+	if (count == 0)
 		return;
 
-	m_overlay_runs[m_overlay_run_count++] = { start, count, blend };
+	m_overlay_runs.push_back({ start, count, blend });
+	m_overlay_run_count++;
 }
 
 void CommandBuffer::pushFontPage(ImageData& image, uint32_t layer, Texture* texture, uint32_t x, uint32_t y)

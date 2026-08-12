@@ -527,7 +527,7 @@ void Context::processCommands(CommandBuffer* cmd, glm::ivec2 vp_size, glm::ivec2
 	uint32_t last_blend_index = 0;
 
 	stats::Scope gpu_commands(stats::TIMER_GPU_COMMANDS);
-	for (uint32_t i = 0; i < cmd->m_count; i++) {
+	for (size_t i = 0; i < cmd->m_commands.size(); i++) {
 		const auto command = &cmd->m_commands[i];
 		stats::addCount(stats::CTR_COMMANDS);
 

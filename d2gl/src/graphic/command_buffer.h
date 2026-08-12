@@ -36,7 +36,11 @@ struct TexData {
 struct TexUpdateQueue {
 	uint32_t count = 0;
 	uint32_t data_offset = 0;
-	std::array<TexData, 4096> tex_data = {};
+	std::vector<TexData> tex_data;
+
+	void reserve(size_t cap) { tex_data.reserve(cap); }
+	void reset() { count = 0; data_offset = 0; }
+	TexData* alloc() { return &tex_data[count++]; }
 };
 
 enum class UBOType {
@@ -92,16 +96,15 @@ struct FontPageUpload {
 };
 
 class CommandBuffer {
-	uint32_t m_count = 0;
-	Command* m_command = nullptr;
-	std::array<Command, 2048> m_commands;
+	std::vector<Command> m_commands;
 
 	UBOUpdateQueue m_ubo_update_queue;
 	TexUpdateQueue m_tex_update_queue;
 	uint32_t m_vertex_count = 0;
 	uint32_t m_vertex_mod_count = 0;
-	std::array<OverlayRun, 4096> m_overlay_runs;
+	std::vector<OverlayRun> m_overlay_runs;
 	uint32_t m_overlay_run_count = 0;
+	
 	bool m_has_mask = false;
 
 	GameScreen m_screen = GameScreen::InGame;
@@ -124,7 +127,6 @@ public:
 	~CommandBuffer();
 
 	void reset();
-	void next();
 
 	void pushCommand(CommandType type, uint32_t index = 0);
 	void drawIndexed(uint32_t start, uint32_t count);
