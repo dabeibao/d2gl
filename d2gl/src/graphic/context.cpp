@@ -163,13 +163,17 @@ Context::Context()
 
 	glGenBuffers(1, &m_vertex_buffer);
 	glBindBuffer(GL_ARRAY_BUFFER, m_vertex_buffer);
-	glBufferData(GL_ARRAY_BUFFER, sizeof(m_vertices.data[0]), NULL, GL_DYNAMIC_DRAW);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(Vertex) * MAX_VERTICES, NULL, GL_DYNAMIC_DRAW);
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
 
 	glGenBuffers(1, &m_pixel_buffer);
 	glBindBuffer(GL_PIXEL_UNPACK_BUFFER, m_pixel_buffer);
 	glBufferData(GL_PIXEL_UNPACK_BUFFER, PIXEL_BUFFER_SIZE, NULL, GL_DYNAMIC_DRAW);
 	glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+
+	m_vertices.resize(App.frame_latency + 1);
+	m_vertices_mod.resize(App.frame_latency + 1);
+	m_vertices_late.resize(1);
 
 	imguiInit();
 

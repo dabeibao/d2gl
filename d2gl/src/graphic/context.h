@@ -31,7 +31,7 @@
 
 namespace d2gl {
 
-#define MAX_FRAME_LATENCY 6
+#define MAX_FRAME_LATENCY 6 // Must be >= App.frame_latency + 1
 #define MAX_INDICES 6 * 50000
 #define MAX_VERTICES 4 * 50000
 #define MAX_VERTICES_MOD 4 * 40000
@@ -61,16 +61,20 @@ namespace d2gl {
 #define IMAGE_UNIT_BLUR 0
 #define IMAGE_UNIT_FXAA 1
 
-#pragma warning(push)
-#pragma warning(disable : 26495)
-template <typename T, size_t t_size, size_t d_size>
+template <typename T, size_t t_size>
 struct Vertices {
 	T* ptr = nullptr;
 	uint32_t count = 0;
 	uint32_t start = 0;
-	std::array<T, t_size> data[d_size];
+	size_t size = 0;
+	std::vector<std::array<T, t_size>> data;
+
+	void resize(size_t d_size)
+	{
+		size = d_size;
+		data.resize(d_size);
+	}
 };
-#pragma warning(pop)
 
 struct VertexParams {
 	uint32_t color = 0;
@@ -146,9 +150,9 @@ class Context {
 	uint8_t m_overlay_open_kind = 0;  // 0 = SD, 1 = HD
 	uint8_t m_overlay_open_blend = 0; // overlay pipeline attachment blend index
 	uint32_t m_overlay_open_start = 0;
-	Vertices<Vertex, MAX_VERTICES, MAX_FRAME_LATENCY> m_vertices;
-	Vertices<VertexMod, MAX_VERTICES_MOD, MAX_FRAME_LATENCY> m_vertices_mod;
-	Vertices<VertexMod, MAX_VERTICES_MOD, 1> m_vertices_late;
+	Vertices<Vertex, MAX_VERTICES> m_vertices;
+	Vertices<VertexMod, MAX_VERTICES_MOD> m_vertices_mod;
+	Vertices<VertexMod, MAX_VERTICES_MOD> m_vertices_late;
 	VertexParams m_vertex_params;
 
 	FrameMetrics m_frame;
