@@ -83,6 +83,11 @@ BOOL WINAPI SetCursorPos(int X, int Y)
 
 BOOL WINAPI SetWindowPos(HWND hWnd, HWND hWndInsertAfter, int X, int Y, int cx, int cy, UINT uFlags)
 {
+	// Only intercept SetWindowPos for the D2 main window.
+	// Other windows (IME candidate window, etc.) must be allowed through.
+	if (hWnd != App.hwnd)
+		return SetWindowPos_Og(hWnd, hWndInsertAfter, X, Y, cx, cy, uFlags);
+
 	UINT req_flags = SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOZORDER;
 	if ((X == 0 && Y == 0 && cx == 0 && cy == 0) || (uFlags & req_flags) == req_flags)
 		SetWindowPos_Og(hWnd, hWndInsertAfter, X, Y, cx, cy, uFlags);
