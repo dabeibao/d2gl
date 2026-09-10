@@ -175,6 +175,10 @@ Context::Context()
 	m_vertices_mod.resize(App.frame_latency + 1);
 	m_vertices_late.resize(1);
 
+	m_command_buffers.resize(App.frame_latency + 1);
+	for (auto& command_buffer : m_command_buffers)
+		command_buffer = std::make_unique<CommandBuffer>();
+
 	imguiInit();
 
 	PipelineCreateInfo movie_pipeline_ci = { "movie" };
@@ -229,6 +233,8 @@ Context::Context()
 			m_item_lut_texture->fill(lut_data + i * layer_size,
 				LUT_ATLAS_WIDTH, LUT_ATLAS_HEIGHT, 0, 0, i);
 		}
+		// The GPU owns a copy now; drop the ~12MB CPU-side buffer.
+		d2::ItemColorLut::Instance().release();
 	}
 
 	if (ISGLIDE3X()) {
@@ -236,6 +242,9 @@ Context::Context()
 		glide_texture_ci.size = { 512, 512 };
 		glide_texture_ci.layer_count = 512;
 		glide_texture_ci.format = { GL_R8, GL_RED };
+		// 512 layers of 512x512 R8 would commit ~128MB of VRAM up front;
+		// sparse commitment grows it on demand as cache slots are used.
+		glide_texture_ci.use_sparse = true;
 		m_glide_texture = std::make_unique<Texture>(glide_texture_ci);
 
 		TextureCreateInfo movie_texture_ci;
@@ -422,7 +431,7 @@ void Context::renderThread(void* context)
 
 	while (ctx->m_rendering) {
 		WaitForSingleObject(ctx->m_semaphore_cpu[frame_index], INFINITE);
-		const auto cmd = &ctx->m_command_buffer[frame_index];
+		const auto cmd = ctx->m_command_buffers[frame_index].get();
 		const glm::ivec2 vp_size = { App.viewport.stretched.x ? App.window.size.x : App.viewport.size.x, App.viewport.stretched.y ? App.window.size.y : App.viewport.size.y };
 		const glm::ivec2 vp_offset = { App.viewport.stretched.x ? 0 : App.viewport.offset.x, App.viewport.stretched.y ? 0 : App.viewport.offset.y };
 
@@ -468,11 +477,67 @@ void Context::renderThread(void* context)
 		ReleaseSemaphore(ctx->m_semaphore_gpu[i], 1, NULL);
 }
 
+void Context::uploadPixelBuffer(size_t size, const void* data)
+{
+	// The staging vector can grow beyond PIXEL_BUFFER_SIZE on texture-heavy
+	// frames; grow the GL buffer to match instead of failing the upload.
+	if (size > m_pixel_buffer_size)
+		m_pixel_buffer_size = std::max<size_t>(m_pixel_buffer_size * 2, size);
+
+	// Orphan-then-fill: handing the driver a fresh allocation avoids a CPU
+	// stall when the previous frame's upload is still being read by the GPU.
+	glBufferData(GL_PIXEL_UNPACK_BUFFER, m_pixel_buffer_size, nullptr, GL_DYNAMIC_DRAW);
+	glBufferSubData(GL_PIXEL_UNPACK_BUFFER, 0, size, data);
+}
+
+void Context::createPreFxTargets()
+{
+	TextureCreateInfo prefx_texture_ci;
+	prefx_texture_ci.size = App.game.size;
+	prefx_texture_ci.slot = TEXTURE_SLOT_PREFX;
+	m_prefx_texture = Context::createTexture(prefx_texture_ci);
+}
+
+void Context::createBloomTargets()
+{
+	FrameBufferCreateInfo bloom_frambuffer_ci;
+	bloom_frambuffer_ci.size = m_bloom_tex_size;
+	bloom_frambuffer_ci.attachments = { { TEXTURE_SLOT_BLOOM1, {}, { GL_LINEAR, GL_LINEAR } } };
+	m_bloom_framebuffer = Context::createFrameBuffer(bloom_frambuffer_ci);
+	if (App.gl_caps.compute_shader)
+		m_bloom_framebuffer->getTexture()->bindImage(IMAGE_UNIT_BLUR);
+
+	TextureCreateInfo bloom_texture_ci;
+	bloom_texture_ci.size = m_bloom_tex_size;
+	bloom_texture_ci.slot = TEXTURE_SLOT_BLOOM2;
+	bloom_texture_ci.filter = { GL_LINEAR, GL_LINEAR };
+	m_bloom_texture = Context::createTexture(bloom_texture_ci);
+}
+
+void Context::createPostfxTargets()
+{
+	FrameBufferCreateInfo frambuffer_ci;
+	frambuffer_ci.size = App.viewport.size;
+	frambuffer_ci.attachments = { { TEXTURE_SLOT_POSTFX1, {}, { GL_LINEAR, GL_LINEAR } } };
+	m_postfx_framebuffer = Context::createFrameBuffer(frambuffer_ci);
+	if (App.gl_caps.compute_shader)
+		m_postfx_framebuffer->getTexture()->bindImage(IMAGE_UNIT_FXAA);
+
+	TextureCreateInfo texture_ci;
+	texture_ci.size = App.viewport.size;
+	texture_ci.slot = TEXTURE_SLOT_POSTFX2;
+	texture_ci.filter = { GL_LINEAR, GL_LINEAR };
+	m_postfx_texture = Context::createTexture(texture_ci);
+}
+
 void Context::processUploads(CommandBuffer* cmd, uint32_t frame_index)
 {
 	if (cmd->m_vertex_count) {
 		stats::Scope upload_vertex(stats::TIMER_GPU_UPLOAD_VERTEX);
-		glBufferSubData(GL_ARRAY_BUFFER, 0, cmd->m_vertex_count * sizeof(Vertex), m_vertices.data[frame_index].data());
+		// Full glBufferData instead of glBufferSubData: reallocating (orphaning)
+		// the storage lets the GPU keep reading the previous frame's vertices
+		// from the old allocation instead of stalling this upload.
+		glBufferData(GL_ARRAY_BUFFER, cmd->m_vertex_count * sizeof(Vertex), m_vertices.data[frame_index].data(), GL_DYNAMIC_DRAW);
 	}
 
 	if (!cmd->m_tex_update_queue.tex_data.empty()) {
@@ -480,7 +545,7 @@ void Context::processUploads(CommandBuffer* cmd, uint32_t frame_index)
 		stats::addCount(stats::CTR_TEX_UPDATES, cmd->m_tex_update_queue.tex_data.size());
 		stats::addBytes(stats::CTR_TEX_BYTES, cmd->m_tex_update_queue.data_offset);
 		glBindBuffer(GL_PIXEL_UNPACK_BUFFER, m_pixel_buffer);
-		glBufferSubData(GL_PIXEL_UNPACK_BUFFER, 0, cmd->m_tex_update_queue.data_offset, cmd->m_tex_buffer.data());
+		uploadPixelBuffer(cmd->m_tex_update_queue.data_offset, cmd->m_tex_buffer.data());
 		for (size_t i = 0; i < cmd->m_tex_update_queue.tex_data.size(); i++) {
 			const auto data = &cmd->m_tex_update_queue.tex_data[i];
 			m_glide_texture->fill((uint8_t*)data->offset, data->tex_size.x, data->tex_size.y, data->tex_offset.x, data->tex_offset.y, data->tex_num);
@@ -514,7 +579,7 @@ void Context::processUploads(CommandBuffer* cmd, uint32_t frame_index)
 		stats::addCount(stats::CTR_TEX_UPDATES);
 		stats::addBytes(stats::CTR_TEX_BYTES, cmd->m_tex_update.size.x * cmd->m_tex_update.size.y * cmd->m_tex_update.bit);
 		glBindBuffer(GL_PIXEL_UNPACK_BUFFER, m_pixel_buffer);
-		glBufferSubData(GL_PIXEL_UNPACK_BUFFER, 0, cmd->m_tex_update.size.x * cmd->m_tex_update.size.y * cmd->m_tex_update.bit, cmd->m_tex_buffer.data());
+		uploadPixelBuffer(cmd->m_tex_update.size.x * cmd->m_tex_update.size.y * cmd->m_tex_update.bit, cmd->m_tex_buffer.data());
 		m_game_texture->fill(0, cmd->m_tex_update.size.x, cmd->m_tex_update.size.y);
 		glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
 	}
@@ -574,6 +639,13 @@ void Context::processPreFx(CommandBuffer* cmd, uint32_t index)
 {
 	stats::Scope gpu_prefx(stats::TIMER_GPU_PREFX);
 
+	// PreFx only runs when bloom or LUT is active; create its targets on
+	// first use instead of allocating them for every session.
+	if (!m_prefx_texture)
+		createPreFxTargets();
+	if (App.bloom.active && !m_bloom_framebuffer)
+		createBloomTargets();
+
 	m_prefx_texture->fillFromBuffer(m_game_framebuffer);
 	bindPipeline(m_prefx_pipeline);
 
@@ -621,6 +693,11 @@ void Context::processSubmit(CommandBuffer* cmd, glm::ivec2 vp_size, glm::ivec2 v
 		bindPipeline(m_movie_pipeline);
 		drawQuad();
 	} else {
+		// Postfx targets are only needed when sharpen or fxaa is enabled;
+		// create them on first use (rebuilt on resize while in use).
+		if ((App.sharpen.active || App.fxaa.active) && !m_postfx_framebuffer)
+			createPostfxTargets();
+
 		if (App.sharpen.active) {
 			const auto sharpen_data = glm::vec3(App.sharpen.strength.value, App.sharpen.clamp.value, App.sharpen.radius.value);
 			if (m_sharpen_data != sharpen_data) {
@@ -676,7 +753,9 @@ void Context::drawOverlay(CommandBuffer* cmd, uint32_t frame_index)
 	if (cmd->m_vertex_mod_count) {
 		stats::Scope gpu_overlay(stats::TIMER_GPU_OVERLAY);
 		stats::addCount(stats::CTR_OVERLAY_RUNS, cmd->m_overlay_run_count);
-		glBufferSubData(GL_ARRAY_BUFFER, 0, cmd->m_vertex_mod_count * sizeof(VertexMod), m_vertices_mod.data[frame_index].data());
+		// Orphaning realloc (see processUploads): in-flight game draws keep
+		// reading the previous allocation while the overlay vertices stream in.
+		glBufferData(GL_ARRAY_BUFFER, cmd->m_vertex_mod_count * sizeof(VertexMod), m_vertices_mod.data[frame_index].data(), GL_DYNAMIC_DRAW);
 
 		VertexMod::bindingDescription();
 		bindPipeline(m_overlay_pipeline, 0);
@@ -741,23 +820,14 @@ void Context::onResize(glm::uvec2 w_size, glm::uvec2 g_size, uint32_t bpp)
 			m_bloom_tex_size = { game_size.x / 4, game_size.y / 4 };
 			m_bloom_work_size = { ceil((float)m_bloom_tex_size.x / 16), ceil((float)m_bloom_tex_size.y / 16) };
 
-			FrameBufferCreateInfo bloom_frambuffer_ci;
-			bloom_frambuffer_ci.size = m_bloom_tex_size;
-			bloom_frambuffer_ci.attachments = { { TEXTURE_SLOT_BLOOM1, {}, { GL_LINEAR, GL_LINEAR } } };
-			m_bloom_framebuffer = Context::createFrameBuffer(bloom_frambuffer_ci);
-			if (App.gl_caps.compute_shader)
-				m_bloom_framebuffer->getTexture()->bindImage(IMAGE_UNIT_BLUR);
+			// Bloom targets are created lazily on first activation (see
+			// processPreFx); only rebuild them here if they already exist.
+			if (m_bloom_framebuffer)
+				createBloomTargets();
 
-			TextureCreateInfo bloom_texture_ci;
-			bloom_texture_ci.size = m_bloom_tex_size;
-			bloom_texture_ci.slot = TEXTURE_SLOT_BLOOM2;
-			bloom_texture_ci.filter = { GL_LINEAR, GL_LINEAR };
-			m_bloom_texture = Context::createTexture(bloom_texture_ci);
-
-			TextureCreateInfo prefx_texture_ci;
-			prefx_texture_ci.size = game_size;
-			prefx_texture_ci.slot = TEXTURE_SLOT_PREFX;
-			m_prefx_texture = Context::createTexture(prefx_texture_ci);
+			// Same for the prefx texture (created on demand in processPreFx).
+			if (m_prefx_texture)
+				createPreFxTargets();
 		} else {
 			TextureCreateInfo texture_ci;
 			texture_ci.size = game_size;
@@ -778,20 +848,12 @@ void Context::onResize(glm::uvec2 w_size, glm::uvec2 g_size, uint32_t bpp)
 	}
 
 	if (game_resized || window_resized) {
-		FrameBufferCreateInfo frambuffer_ci;
-		frambuffer_ci.size = App.viewport.size;
-		frambuffer_ci.attachments = { { TEXTURE_SLOT_POSTFX1, {}, { GL_LINEAR, GL_LINEAR } } };
-		m_postfx_framebuffer = Context::createFrameBuffer(frambuffer_ci);
-		if (App.gl_caps.compute_shader)
-			m_postfx_framebuffer->getTexture()->bindImage(IMAGE_UNIT_FXAA);
-
 		m_fxaa_work_size = { ceil((float)App.viewport.size.x / 16), ceil((float)App.viewport.size.y / 16) };
 
-		TextureCreateInfo texture_ci;
-		texture_ci.size = App.viewport.size;
-		texture_ci.slot = TEXTURE_SLOT_POSTFX2;
-		texture_ci.filter = { GL_LINEAR, GL_LINEAR };
-		m_postfx_texture = Context::createTexture(texture_ci);
+		// Postfx targets (sharpen/fxaa) are created lazily on first use (see
+		// processSubmit); only rebuild them here if they already exist.
+		if (m_postfx_framebuffer)
+			createPostfxTargets();
 
 		onShaderChange();
 	}
@@ -831,14 +893,14 @@ void Context::onStageChange()
 		case DrawStage::UI:
 			if (ISGLIDE3X() && (App.bloom.active || App.lut.selected) && *d2::screen_shift != SCREENPANEL_BOTH) {
 				flushVertices();
-				m_command_buffer[m_frame_index].pushCommand(CommandType::PreFx, m_current_blend_index);
+				m_command_buffers[m_frame_index]->pushCommand(CommandType::PreFx, m_current_blend_index);
 			}
 			break;
 		case DrawStage::Map:
 			if (modules::MiniMap::Instance().isActive()) {
 				flushVertices();
 				m_blend_locked = true;
-				m_command_buffer[m_frame_index].pushCommand(CommandType::SetBlendState, 3);
+				m_command_buffers[m_frame_index]->pushCommand(CommandType::SetBlendState, 3);
 				setVertexFlagW(1 + !*d2::automap_on);
 			}
 			break;
@@ -846,7 +908,7 @@ void Context::onStageChange()
 			if (modules::MiniMap::Instance().isActive()) {
 				flushVertices();
 				m_blend_locked = false;
-				m_command_buffer[m_frame_index].pushCommand(CommandType::SetBlendState, m_current_blend_index);
+				m_command_buffers[m_frame_index]->pushCommand(CommandType::SetBlendState, m_current_blend_index);
 				setVertexFlagW(0);
 
 				modules::MiniMap::Instance().draw();
@@ -875,7 +937,7 @@ void Context::setBlendState(uint32_t index)
 	flushVertices();
 	m_current_blend_index = g_blend_types.at(index).first;
 	if (!m_blend_locked)
-		m_command_buffer[m_frame_index].pushCommand(CommandType::SetBlendState, m_current_blend_index);
+		m_command_buffers[m_frame_index]->pushCommand(CommandType::SetBlendState, m_current_blend_index);
 }
 
 void Context::beginFrame()
@@ -906,7 +968,7 @@ void Context::beginFrame()
 		modules::MotionPrediction::Instance().update();
 	}
 
-	m_command_buffer[m_frame_index].pushCommand(CommandType::Begin);
+	m_command_buffers[m_frame_index]->pushCommand(CommandType::Begin);
 	stats::beginDraw();
 }
 
@@ -931,12 +993,12 @@ void Context::presentFrame()
 	flushVertices();
 	setVertexFlagW(0);
 	closeOverlayRun();
-	m_command_buffer[m_frame_index].pushCommand(CommandType::Submit);
+	m_command_buffers[m_frame_index]->pushCommand(CommandType::Submit);
 
 	modules::HDText::Instance().update();
 
 	if (m_vertices_mod.count) {
-		m_command_buffer[m_frame_index].m_vertex_mod_count = m_vertices_mod.count;
+		m_command_buffers[m_frame_index]->m_vertex_mod_count = m_vertices_mod.count;
 		m_frame.drawcall_count++;
 	}
 	option::Menu::instance().check();
@@ -948,7 +1010,7 @@ void Context::presentFrame()
 		stats::Scope gpu_wait_scope(stats::TIMER_CPU_GPU_WAIT);
 		WaitForSingleObject(m_semaphore_gpu[m_frame_index], INFINITE);
 	}
-	m_command_buffer[m_frame_index].reset();
+	m_command_buffers[m_frame_index]->reset();
 
 	QueryPerformanceCounter(&m_frame.time);
 	double cur_time = (double(m_frame.time.QuadPart) / m_frame.frequency);
@@ -991,7 +1053,7 @@ void Context::closeOverlayRun()
 
 	const uint32_t count = m_vertices_mod.count - m_overlay_open_start;
 	if (count > 0)
-		m_command_buffer[m_frame_index].addOverlayRun(m_overlay_open_start, count, m_overlay_open_blend);
+		m_command_buffers[m_frame_index]->addOverlayRun(m_overlay_open_start, count, m_overlay_open_blend);
 
 	m_overlay_open = false;
 }
@@ -1038,7 +1100,7 @@ void Context::pushVertex(const GlideVertex* vertex, glm::vec2 fix, glm::ivec2 of
 	// Game FBO path: pre-HD content, world content without an HD item, map-stage
 	// content, and cursor content when the overlay buffer is full.
 	if (m_vertex_params.flags.w == 10)
-		m_command_buffer[m_frame_index].m_has_mask = true;
+		m_command_buffers[m_frame_index]->m_has_mask = true;
 
 	if (m_vertices.count >= MAX_VERTICES - 4)
 		flushVertices();
@@ -1096,7 +1158,7 @@ void Context::flushVertices()
 	if (m_vertices.count == 0)
 		return;
 
-	m_command_buffer[m_frame_index].drawIndexed(m_vertices.start, m_vertices.count);
+	m_command_buffers[m_frame_index]->drawIndexed(m_vertices.start, m_vertices.count);
 
 	m_vertices.start += m_vertices.count;
 	m_vertices.count = 0;
@@ -1190,7 +1252,7 @@ void Context::appendDelayedObjects()
 
 void Context::queueExternalTexUpload(uint32_t layer, const uint8_t* pixels, uint32_t width, uint32_t height, uint32_t offset_x, uint32_t offset_y, bool compressed)
 {
-	auto& cmd = m_command_buffer[m_frame_index];
+	auto& cmd = *m_command_buffers[m_frame_index];
 	ExternalTexUpload upload;
 	size_t pixel_bytes = compressed
 		? (size_t)(((width + 3) / 4) * ((height + 3) / 4) * 16)

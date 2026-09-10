@@ -57,15 +57,15 @@ void dllAttach(HMODULE hmodule)
 	if ((App.api == Api::Glide && !flag_3dfx) || (App.api == Api::DDraw && flag_3dfx))
 		return;
 
-#if 0
+	// Windowed mode always selects the GDI renderer, so D2GL can never own the
+	// pipeline. Stay fully inert (no hooks, no patches, no early/late DLLs) when
+	// pulled into a "-w" session, e.g. by another module LoadLibrary-ing
+	// D2DDraw.dll while d2gl ships as the local ddraw.dll.
 	if (command_line.find("-w ") != std::string::npos || command_line.find("-w") == command_line.length() - 2) {
-		if (App.api == Api::Glide && flag_3dfx) {
-			MessageBoxA(NULL, "D2GL Glide wrapper is not compatible with \"-w\" flag.\nRemove \"-w\" flag and run game again.", "Unsupported argument detected!", MB_OK | MB_ICONWARNING);
-			exit(1);
+		if (App.api != Api::Glide) {
+			return;
 		}
-		return;
 	}
-#endif
 
 	App.log = command_line.find("-log") != std::string::npos;
 	App.direct = command_line.find("-direct") != std::string::npos;

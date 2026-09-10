@@ -18,6 +18,8 @@
 
 #pragma once
 
+#include <map>
+#include <unordered_map>
 #include "graphic/texture.h"
 
 namespace d2gl {
@@ -44,7 +46,8 @@ typedef std::vector<std::pair<uint16_t, uint16_t>> SubTextureCounts;
 
 struct GlideTexture {
 	uint8_t* memory = nullptr;
-	std::map<uint32_t, uint32_t> hash;
+	// Address -> content hash; hit on every grTexSource, so O(1) lookup matters.
+	std::unordered_map<uint32_t, uint32_t> hash;
 };
 
 extern GlideTexture g_glide_texture;

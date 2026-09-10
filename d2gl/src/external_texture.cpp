@@ -338,15 +338,20 @@ void ExternalTextureManager::drawTexture(uint32_t handle, float x, float y, floa
 
 void ExternalTextureManager::drawTexture(const Slot& info, float x, float y, float w, float h, uint32_t color, uint8_t color_idx)
 {
-	auto obj = std::make_unique<Object>(glm::vec2(x, y), glm::vec2(w, h));
+	if (!m_object)
+		m_object = std::make_unique<Object>();
+
+	Object& obj = *m_object;
+	obj.setPosition(glm::vec2(x, y));
+	obj.setSize(glm::vec2(w, h));
 	float u0 = (float)info.x / ATLAS_SIZE;
 	float v1 = (float)(info.y + info.h) / ATLAS_SIZE;
 	float u1 = (float)(info.x + info.w) / ATLAS_SIZE;
 	float v0 = (float)info.y / ATLAS_SIZE;
-	obj->setTexCoord({ u0, v1, u1, v0 });
-	obj->setTexIds({ (int16_t)info.layer, 0 });
-	obj->setFlags(8, 0, 0, color_idx);
-	obj->setColor(color);
+	obj.setTexCoord({ u0, v1, u1, v0 });
+	obj.setTexIds({ (int16_t)info.layer, 0 });
+	obj.setFlags(8, 0, 0, color_idx);
+	obj.setColor(color);
 
 	float extra_y = 0.0f;
 	if (color_idx != 0) {
@@ -357,13 +362,13 @@ void ExternalTextureManager::drawTexture(const Slot& info, float x, float y, flo
 			lut_layer = (int16_t)d2::ItemColorLut::Instance().getLayerIndex(cls, ci);
 			if (lut_layer > 0) {
 				extra_y = 1.0f;
-				obj->setTexIds({ (int16_t)info.layer, lut_layer });
+				obj.setTexIds({ (int16_t)info.layer, lut_layer });
 			}
 		}
 	}
-	obj->setExtra({ 1.0f, extra_y });
+	obj.setExtra({ 1.0f, extra_y });
 
-	App.context->pushObject(obj);
+	App.context->pushObject(m_object);
 }
 
 void ExternalTextureManager::releaseTexture(uint32_t handle)

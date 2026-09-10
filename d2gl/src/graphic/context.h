@@ -124,10 +124,14 @@ class Context {
 	HGLRC m_context = nullptr;
 	HANDLE m_semaphore_cpu[MAX_FRAME_LATENCY];
 	HANDLE m_semaphore_gpu[MAX_FRAME_LATENCY];
-	CommandBuffer m_command_buffer[MAX_FRAME_LATENCY];
+	// Sized to App.frame_latency + 1 (like the vertex arenas below): only
+	// that many slots are ever cycled through, so pre-allocating all of
+	// MAX_FRAME_LATENCY would waste one 12MB staging buffer per unused slot.
+	std::vector<std::unique_ptr<CommandBuffer>> m_command_buffers;
 	bool m_rendering = true;
 
 	GLuint m_pixel_buffer;
+	size_t m_pixel_buffer_size = PIXEL_BUFFER_SIZE;
 	GLuint m_index_buffer;
 	GLuint m_vertex_array;
 	GLuint m_vertex_buffer;
@@ -212,7 +216,7 @@ public:
 	void presentFrame();
 
 	inline uint32_t getFrameIndex() { return m_frame_index; }
-	inline CommandBuffer* getCommandBuffer() { return &m_command_buffer[m_frame_index]; }
+	inline CommandBuffer* getCommandBuffer() { return m_command_buffers[m_frame_index].get(); }
 
 	void setViewport(glm::ivec2 size, glm::ivec2 offset = { 0, 0 });
 	inline void bindFrameBuffer(const std::unique_ptr<FrameBuffer>& framebuffer, bool clear = true) { framebuffer->bind(clear); }
@@ -260,6 +264,10 @@ public:
 	void processPreFx(CommandBuffer* cmd, uint32_t index);
 	void processSubmit(CommandBuffer* cmd, glm::ivec2 vp_size, glm::ivec2 vp_offset, uint32_t index);
 	void drawOverlay(CommandBuffer* cmd, uint32_t frame_index);
+	void uploadPixelBuffer(size_t size, const void* data);
+	void createPreFxTargets();
+	void createBloomTargets();
+	void createPostfxTargets();
 
 private:
 	void resetFileTime();

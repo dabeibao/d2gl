@@ -75,6 +75,12 @@ void CommandBuffer::resize()
 
 void CommandBuffer::colorUpdate(UBOType type, const void* data)
 {
+	// The queue is a fixed 16-slot array; more palette/gamma changes in one
+	// frame would write out of bounds, so drop the excess (the hash-gated
+	// call sites make this pathological in practice).
+	if (m_ubo_update_queue.count >= m_ubo_update_queue.data.size())
+		return;
+
 	memcpy(m_ubo_update_queue.data[m_ubo_update_queue.count].value, data, sizeof(glm::vec4) * 256);
 	m_ubo_update_queue.data[m_ubo_update_queue.count].type = type;
 

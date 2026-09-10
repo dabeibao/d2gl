@@ -19,6 +19,7 @@
 #pragma once
 
 #include "types.h"
+#include <algorithm>
 #include <vector>
 
 namespace d2gl {
@@ -51,6 +52,7 @@ class Texture {
 	uint32_t m_next_layer_index = 0;
 	uint32_t m_index_count = 1;
 	bool m_sparse = false;
+	uint32_t m_sparse_page_depth = 1;
 	bool m_compressed = false;
 	uint32_t m_committed_layers = 0;
 
@@ -101,6 +103,12 @@ public:
 
 private:
 	void commitLayer(uint32_t layer);
+	inline uint32_t alignToPageDepth(uint32_t layers) const
+	{
+		// Commit requests must be multiples of the driver's virtual page
+		// depth, otherwise glTexPageCommitmentARB fails with GL_INVALID_VALUE.
+		return std::min((layers + m_sparse_page_depth - 1) / m_sparse_page_depth * m_sparse_page_depth, m_layer_count);
+	}
 };
 
 }

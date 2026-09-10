@@ -49,7 +49,7 @@ glm::vec2 Font::getTextSize(const wchar_t* str, const int max_chars)
 			}
 		}
 		if (str[char_num] == L'\n') {
-			m_line_width[line_num] = advance;
+			setLineWidth(line_num, advance);
 			m_text_size.x = glm::max(m_text_size.x, advance);
 			if (str[char_num + 1] != L'\0') {
 				m_text_size.y += line_height;
@@ -67,7 +67,7 @@ glm::vec2 Font::getTextSize(const wchar_t* str, const int max_chars)
 	}
 
 	m_line_count = line_num + 1;
-	m_line_width[line_num] = advance;
+	setLineWidth(line_num, advance);
 	m_text_size.x = glm::max(m_text_size.x, advance);
 	m_text_size.y += line_height - (line_height - m_font_size);
 
@@ -88,9 +88,9 @@ void Font::drawText(const wchar_t* str, glm::vec2 pos, uint32_t color, bool fram
 		offset.y += (m_font_size - m_size) / 2.0f;
 
 	if (m_align == TextAlign::Right)
-		offset.x += m_text_size.x - m_line_width[0];
+		offset.x += m_text_size.x - getLineWidth(0);
 	else if (m_align == TextAlign::Center)
-		offset.x += (m_text_size.x - m_line_width[0]) / 2.0f;
+		offset.x += (m_text_size.x - getLineWidth(0)) / 2.0f;
 
 	uint32_t char_color = color;
 	if (m_bordered) {
@@ -127,9 +127,9 @@ void Font::drawText(const wchar_t* str, glm::vec2 pos, uint32_t color, bool fram
 			line_num++;
 
 			if (m_align == TextAlign::Right)
-				offset.x += m_text_size.x - m_line_width[line_num];
+				offset.x += m_text_size.x - getLineWidth(line_num);
 			else if (m_align == TextAlign::Center)
-				offset.x += (m_text_size.x - m_line_width[line_num]) / 2.0f;
+				offset.x += (m_text_size.x - getLineWidth(line_num)) / 2.0f;
 		} else
 			offset.x += drawChar(str[char_num], pos + offset, char_color) + letter_spacing;
 		char_num++;

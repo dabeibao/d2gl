@@ -45,6 +45,9 @@ class ExternalTextureManager {
 	};
 
 	Context& m_ctx;
+	// Reused draw object: pushObject copies the 4 vertices immediately, so
+	// one instance can serve every drawTexture call without per-frame churn.
+	std::unique_ptr<Object> m_object;
 	Slot m_slots[MAX_HANDLES];
 	std::vector<AtlasLayerInfo> m_atlas_layers;
 	uint16_t m_layer_used[8] = { 0 };

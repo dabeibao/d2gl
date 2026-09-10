@@ -45,8 +45,14 @@ Texture::Texture(const TextureCreateInfo& info)
 		m_sparse = true;
 		glTexParameteri(m_target, GL_TEXTURE_SPARSE_ARB, GL_TRUE);
 		glTexStorage3D(m_target, 1, m_internal_format, m_width, m_height, m_layer_count);
-		glTexPageCommitmentARB(m_target, 0, 0, 0, 0, m_width, m_height, 2, GL_TRUE);
-		m_committed_layers = 2;
+
+		GLint page_depth = 1;
+		glGetInternalformativ(m_target, m_internal_format, GL_VIRTUAL_PAGE_SIZE_Z_ARB, 1, &page_depth);
+		m_sparse_page_depth = (page_depth > 0) ? (uint32_t)page_depth : 1;
+
+		const uint32_t initial_layers = alignToPageDepth(2);
+		glTexPageCommitmentARB(m_target, 0, 0, 0, 0, m_width, m_height, initial_layers, GL_TRUE);
+		m_committed_layers = initial_layers;
 	} else if (m_target == GL_TEXTURE_2D) {
 		glTexImage2D(m_target, 0, m_internal_format, m_width, m_height, 0, m_format, m_type, 0);
 	} else {
@@ -139,9 +145,7 @@ void Texture::fillFromBuffer(const std::unique_ptr<FrameBuffer>& fbo, uint32_t i
 
 void Texture::commitLayer(uint32_t layer)
 {
-	uint32_t required = layer + 1;
-	if (required > m_layer_count)
-		required = m_layer_count;
+	uint32_t required = alignToPageDepth(layer + 1);
 	if (required <= m_committed_layers)
 		return;
 

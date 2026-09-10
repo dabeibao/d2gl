@@ -64,6 +64,18 @@ class Font {
 	uint32_t m_line_count = 0;
 	bool m_masking = false;
 
+	// m_line_width is a fixed 100-entry array; texts with more lines (e.g.
+	// long PlugY stat panels) must not index past it.
+	inline void setLineWidth(int line, float width)
+	{
+		if (line >= 0 && line < 100)
+			m_line_width[line] = width;
+	}
+	inline float getLineWidth(int line) const
+	{
+		return (line >= 0 && line < 100) ? m_line_width[line] : 0.0f;
+	}
+
 public:
 	Font(GlyphSet* glyph_set, const FontCreateInfo& font_ci);
 	~Font() = default;

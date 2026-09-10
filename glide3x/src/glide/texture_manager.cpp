@@ -75,20 +75,22 @@ TextureManager::TextureManager(const SubTextureCounts& size_counts)
 
 const SubTextureInfo* TextureManager::getSubTextureInfo(uint32_t address, uint16_t size, uint16_t width, uint16_t height, uint32_t frame_count)
 {
-	if (g_glide_texture.hash.find(address) == g_glide_texture.hash.end())
+	const auto hash_it = g_glide_texture.hash.find(address);
+	if (hash_it == g_glide_texture.hash.end())
 		return nullptr;
 
-	auto hash = g_glide_texture.hash[address];
+	const uint32_t hash = hash_it->second;
 	auto& data = m_data[size];
 
-	if (data.cache.find(address) == data.cache.end())
-		data.cache.insert({ address, { frame_count } });
-	auto& cache = data.cache[address];
+	auto cache_it = data.cache.find(address);
+	if (cache_it == data.cache.end())
+		cache_it = data.cache.insert({ address, { frame_count } }).first;
+	auto& cache = cache_it->second;
 
 	if (cache.last_used_frame != frame_count) {
 		for (auto it = cache.items.begin(); it != cache.items.end();) {
-			if ((*it).first != hash) {
-				data.available[(*it).second] = true;
+			if (it->first != hash) {
+				data.available[it->second] = true;
 				it = cache.items.erase(it);
 			} else
 				it++;
@@ -96,7 +98,8 @@ const SubTextureInfo* TextureManager::getSubTextureInfo(uint32_t address, uint16
 		cache.last_used_frame = frame_count;
 	}
 
-	if (cache.items.find(hash) == cache.items.end()) {
+	const auto item_it = cache.items.find(hash);
+	if (item_it == cache.items.end()) {
 		if (data.available.begin() == data.available.end())
 			return nullptr;
 
@@ -112,7 +115,7 @@ const SubTextureInfo* TextureManager::getSubTextureInfo(uint32_t address, uint16
 		return texture_info;
 	}
 
-	return &data.sub_texure_info[cache.items[hash]];
+	return &data.sub_texure_info[item_it->second];
 }
 
 void TextureManager::clearCache()

@@ -86,6 +86,21 @@ static HDItemInfo* loadHDItem(const char * item_code)
 		return nullptr;
 	}
 
+	// v61 sprites hold a raw DXT5 stream: decode it to RGBA first so the
+	// per-frame slicing below (w*h*4 stride) is valid. Same fallback as
+	// ExternalTextureManager::loadTexture.
+	if (img.compressed) {
+		size_t bcw = (img.width + 3) / 4;
+		size_t bch = (img.height + 3) / 4;
+		ImageData decoded = helpers::decodeDXT5(img.data, img.width, img.height, bcw * bch * 16);
+		helpers::clearImage(img);
+		img = decoded;
+		if (!img.data) {
+			trace_log("HD: failed to decode sprite %s", item_code);
+			return nullptr;
+		}
+	}
+
 	auto ext_mgr = getExtTextureMgr();
 	if (!ext_mgr) {
 		helpers::clearImage(img);

@@ -62,6 +62,14 @@ public:
     // Returns 0 for invalid inputs.
     uint16_t getLayerIndex(int transform, int tint) const;
 
+    // Free the CPU-side copy once the data has been uploaded to the GPU
+    // (~12MB). m_ready stays true: the LUT lives on in the texture.
+    void release()
+    {
+        delete[] m_lut_data;
+        m_lut_data = nullptr;
+    }
+
 private:
     ItemColorLut() = default;
     ~ItemColorLut() { delete[] m_lut_data; }

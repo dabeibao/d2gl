@@ -155,8 +155,9 @@ BlendFactors Pipeline::blendFactor(BlendType type)
 GLint Pipeline::getUniformLocation(const std::string& name)
 {
 	bind();
-	if (m_uniform_cache.find(name) != m_uniform_cache.end())
-		return m_uniform_cache[name];
+	const auto it = m_uniform_cache.find(name);
+	if (it != m_uniform_cache.end())
+		return it->second;
 
 	int location = glGetUniformLocation(m_id, name.c_str());
 	if (location == -1) {

@@ -205,15 +205,14 @@ void GlyphSet::loadPageAsync(int page_index)
 		m_pending_tasks++;
 	}
 
-	std::string name = m_name;
-	auto glyphs = m_page_glyphs[page_index];
-
-	PageLoadPool::instance().submit([this, page_index, name = std::move(name), glyphs = std::move(glyphs)]() mutable {
-
+	// m_name / m_page_glyphs are immutable after construction and `this`
+	// outlives all pending tasks (~GlyphSet waits for m_pending_tasks == 0),
+	// so the worker can read them directly without copying them into the
+	// task closure.
+	PageLoadPool::instance().submit([this, page_index]() {
 		uint64_t start_ts = GetTickCount64();
 
-		auto buffer = helpers::loadFile("assets\\atlases\\" + name + "\\" + std::to_string(page_index) + ".png");
-
+		auto buffer = helpers::loadFile("assets\\atlases\\" + m_name + "\\" + std::to_string(page_index) + ".png");
 
 		auto image = helpers::loadImageFromMemory(buffer.data, buffer.size);
 		delete[] buffer.data;
@@ -230,7 +229,7 @@ void GlyphSet::loadPageAsync(int page_index)
 		completed.image = image;
 		completed.start_ts = start_ts;
 
-		for (auto& [cc, g] : glyphs)
+		for (auto& [cc, g] : m_page_glyphs[page_index])
 			completed.glyphs.emplace_back(cc, g);
 
 		{
