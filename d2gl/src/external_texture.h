@@ -35,7 +35,16 @@ class ExternalTextureManager {
 	};
 	struct AtlasLayerInfo {
 		uint16_t layer;
+		// Kept sorted by area (w*h) descending so the BSSF scan can stop at
+		// the first rect whose area is below the request (a fitting rect
+		// always has area >= w*h).
 		std::vector<FreeRect> free_rects;
+		// Cached max width/height over free_rects; recomputed lazily when
+		// dirty. Lets placeInAtlas reject a layer in O(1) when no free rect
+		// can hold the request. Atlas space is never returned, so both
+		// bounds only ever shrink.
+		uint16_t max_w = 0, max_h = 0;
+		bool dirty = true;
 	};
 	struct Slot {
 		bool in_use = false;
@@ -56,6 +65,7 @@ class ExternalTextureManager {
 
 	uint16_t allocLayer();
 	void freeLayer(uint16_t layer);
+	static void insertFreeRect(AtlasLayerInfo& al, FreeRect r);
 	bool placeInAtlas(uint16_t w, uint16_t h, uint16_t& out_layer, uint16_t& out_x, uint16_t& out_y);
 	void doSplit(AtlasLayerInfo& al, const FreeRect& rect, uint16_t w, uint16_t h);
 	void drawTexture(const Slot& info, float x, float y, float w, float h, uint32_t color, uint8_t color_idx = 0);

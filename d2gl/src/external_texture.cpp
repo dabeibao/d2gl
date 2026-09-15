@@ -52,10 +52,26 @@ void ExternalTextureManager::freeLayer(uint16_t layer)
 		m_layer_used[layer >> 4] &= ~(1 << (layer & 0xF));
 }
 
+// Insert a free rect keeping free_rects sorted by area (w*h) descending.
+// upper_bound with an "area greater than" comparator yields the first
+// strictly smaller element, i.e. the correct position for a range kept in
+// non-ascending order.
+void ExternalTextureManager::insertFreeRect(AtlasLayerInfo& al, FreeRect r)
+{
+	auto area_gt = [](const FreeRect& a, const FreeRect& b) {
+		return (uint32_t)a.w * a.h > (uint32_t)b.w * b.h;
+	};
+	auto it = std::upper_bound(al.free_rects.begin(), al.free_rects.end(), r, area_gt);
+	al.free_rects.insert(it, r);
+}
+
 void ExternalTextureManager::doSplit(AtlasLayerInfo& al, const FreeRect& rect, uint16_t w, uint16_t h)
 {
+	// DXT5 compresses in 4x4 blocks and every guillotine boundary is a
+	// multiple of 4 (initial 512x512 rect, splits subtract 4-aligned
+	// sizes), so any remnant >= 4x4 can still hold at least one full block.
 	auto is_valid_free_rect = [](uint16_t width, uint16_t height) {
-		return (width > 8 && height >= 5) || (width >= 5 && height > 8);
+		return width >= 4 && height >= 4;
 	};
 	uint16_t remain_w = rect.w - w;
 	uint16_t remain_h = rect.h - h;
@@ -64,15 +80,16 @@ void ExternalTextureManager::doSplit(AtlasLayerInfo& al, const FreeRect& rect, u
 
 	if (split_horizontally) {
 		if (is_valid_free_rect(remain_w, h))
-			al.free_rects.push_back({ (uint16_t)(rect.x + w), rect.y, remain_w, h });
+			insertFreeRect(al, { (uint16_t)(rect.x + w), rect.y, remain_w, h });
 		if (is_valid_free_rect(rect.w, remain_h))
-			al.free_rects.push_back({ rect.x, (uint16_t)(rect.y + h), rect.w, remain_h });
+			insertFreeRect(al, { rect.x, (uint16_t)(rect.y + h), rect.w, remain_h });
 	} else {
 		if (is_valid_free_rect(remain_w, rect.h))
-			al.free_rects.push_back({ (uint16_t)(rect.x + w), rect.y, remain_w, rect.h });
+			insertFreeRect(al, { (uint16_t)(rect.x + w), rect.y, remain_w, rect.h });
 		if (is_valid_free_rect(w, remain_h))
-			al.free_rects.push_back({ rect.x, (uint16_t)(rect.y + h), w, remain_h });
+			insertFreeRect(al, { rect.x, (uint16_t)(rect.y + h), w, remain_h });
 	}
+	al.dirty = true;
 }
 
 bool ExternalTextureManager::placeInAtlas(uint16_t w, uint16_t h, uint16_t& out_layer, uint16_t& out_x, uint16_t& out_y)
@@ -80,10 +97,32 @@ bool ExternalTextureManager::placeInAtlas(uint16_t w, uint16_t h, uint16_t& out_
 	for (uint16_t i = 0; i < (uint16_t)m_atlas_layers.size(); i++) {
 		auto& al = m_atlas_layers[i];
 
+		// O(1) reject: recompute the cached bounds lazily, then skip this
+		// layer if no free rect can possibly hold the request.
+		if (al.dirty) {
+			al.max_w = 0;
+			al.max_h = 0;
+			for (const auto& r : al.free_rects) {
+				if (r.w > al.max_w)
+					al.max_w = r.w;
+				if (r.h > al.max_h)
+					al.max_h = r.h;
+			}
+			al.dirty = false;
+		}
+		if (w > al.max_w || h > al.max_h)
+			continue;
+
 		int best_idx = -1;
 		uint32_t best_waste = UINT32_MAX;
+		uint32_t need = (uint32_t)w * h;
 		for (uint16_t j = 0; j < (uint16_t)al.free_rects.size(); j++) {
 			const auto& r = al.free_rects[j];
+			// free_rects are sorted by area descending; a rect fitting the
+			// request must have area >= w*h, so everything after the first
+			// smaller rect can be skipped.
+			if ((uint32_t)r.w * (uint32_t)r.h < need)
+				break;
 			if (r.w >= w && r.h >= h) {
 				uint16_t leftover_w = r.w - w;
 				uint16_t leftover_h = r.h - h;
@@ -168,43 +207,47 @@ uint32_t ExternalTextureManager::loadTextureRGBA(const uint8_t* pixels, uint32_t
 
 	const bool large = width > ATLAS_THRESHOLD && height > ATLAS_THRESHOLD;
 
-	uint16_t layer = 0, offset_x = 0, offset_y = 0;
-	bool is_atlas = false;
-
-	if (large) {
-		layer = allocLayer();
-		if (layer >= 128)
-			return 0;
-	} else {
-		if (!placeInAtlas((uint16_t)bw, (uint16_t)bh, layer, offset_x, offset_y))
-			return 0;
-		is_atlas = true;
-	}
-
-	std::unique_ptr<uint8_t[]> compressed_buf;
-	const uint8_t* upload_data = nullptr;
-	uint32_t upload_w = bw, upload_h = bh;
-
+	// Compressed pass-through (e.g. sprite v61) must be validated BEFORE any
+	// atlas space is consumed. Only safe when the source block grid matches
+	// the destination slot exactly (no ATLAS_SIZE clipping) — otherwise the
+	// bytes won't line up with the upload region. Bail out and let the caller
+	// (loadTexture) decode to RGBA and retry; checking this first also keeps
+	// the free rect that placeInAtlas would have split away.
 	if (already_compressed) {
-		// Caller handed us a DXT5 byte stream already (e.g. sprite v61).
-		// Pass it straight through; no re-compress, no quality loss.
-		// Only safe when the source block grid matches the destination
-		// slot exactly (no ATLAS_SIZE clipping) — otherwise the bytes
-		// won't line up with the upload region. Bail out and let the
-		// caller (loadTexture) decode to RGBA and retry.
 		uint32_t src_bcw = (width + 3) / 4;
 		uint32_t src_bch = (height + 3) / 4;
-		if (src_bcw == bw / 4 && src_bch == bh / 4 && w == width && h == height) {
-			upload_data = pixels;
-		} else {
-			if (!is_atlas)
-				freeLayer(layer);
+		if (!(src_bcw == bw / 4 && src_bch == bh / 4 && w == width && h == height)) {
 			m_free_slots.push_back(slot);
 			if (out_width) *out_width = 0;
 			if (out_height) *out_height = 0;
 			return 0;
 		}
 	}
+
+	uint16_t layer = 0, offset_x = 0, offset_y = 0;
+	bool is_atlas = false;
+
+	if (large) {
+		layer = allocLayer();
+		if (layer >= 128) {
+			m_free_slots.push_back(slot);
+			if (out_width) *out_width = 0;
+			if (out_height) *out_height = 0;
+			return 0;
+		}
+	} else {
+		if (!placeInAtlas((uint16_t)bw, (uint16_t)bh, layer, offset_x, offset_y)) {
+			m_free_slots.push_back(slot);
+			if (out_width) *out_width = 0;
+			if (out_height) *out_height = 0;
+			return 0;
+		}
+		is_atlas = true;
+	}
+
+	std::unique_ptr<uint8_t[]> compressed_buf;
+	const uint8_t* upload_data = already_compressed ? pixels : nullptr;
+	uint32_t upload_w = bw, upload_h = bh;
 
 	if (!already_compressed) {
 		// Build a 4-byte-aligned RGBA source buffer covering [0..bw) x [0..bh).
