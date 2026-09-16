@@ -39,7 +39,10 @@ struct HoveredUnit {
 };
 
 class HDText {
-	std::map<uint8_t, std::unique_ptr<Font>> m_fonts;
+	// unordered_map: getFont() is a per-text hot path; font ids are dense
+	// small ints but the std::map's O(log n) node hops are needless cost.
+	// (<unordered_map> arrives transitively via font.h -> glyph_set.h.)
+	std::unordered_map<uint32_t, std::unique_ptr<Font>> m_fonts;
 	std::unique_ptr<Object> m_object_bg;
 	std::vector<GlyphSet*> m_glyph_sets;
 	uint32_t m_lang_id = 0;
