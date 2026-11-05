@@ -230,7 +230,24 @@ void saveIni()
 		"hd_item=%s\n\n"
 		"; HD in game text.\n"
 		"hd_text=%s\n"
-		"hd_text_scale=%.3f\n\n"
+		"hd_text_scale=%.3f\n"
+		"; Runtime SDF font: TTF/OTF/TTC path or system family name.\n"
+		"; Leave empty to use the MSDF atlas assets.\n"
+		"hd_text_font=%s\n"
+		"hd_text_font_index=%d\n"
+		"hd_text_char_width=%.3f\n"
+		"hd_text_line_height=%.3f\n"
+		"hd_text_letter_spacing=%.3f\n"
+		"hd_text_baseline=%.3f\n"
+		"hd_text_stroke=%.3f\n"
+		"hd_text_bold=%.3f\n"
+		"hd_text_solidity=%.3f\n"
+		"hd_text_center=%.3f\n"
+		"hd_text_sharpness=%.3f\n"
+		"hd_text_border=%.3f\n"
+		"hd_text_shadow_offset=%.3f\n"
+		"hd_text_snap=%s\n"
+		"hd_text_render_mode=%d\n\n"
 		//"; HD life & mana orbs.\n"
 		//"hd_orbs=%s\n"
 		//"hd_orbs_centered=%s\n\n"
@@ -257,6 +274,21 @@ void saveIni()
 		boolString(App.hd_item.active),
 		boolString(App.hd_text.active),
 		App.hd_text.scale.value,
+		App.hd_text.font_file.c_str(),
+		App.hd_text.font_index,
+		App.hd_text.char_width.value,
+		App.hd_text.line_height.value,
+		App.hd_text.letter_spacing.value,
+		App.hd_text.baseline.value,
+		App.hd_text.stroke.value,
+		App.hd_text.bold.value,
+		App.hd_text.solidity.value,
+		App.hd_text.center.value,
+		App.hd_text.sharpness.value,
+		App.hd_text.border.value,
+		App.hd_text.shadow_offset.value,
+		boolString(App.hd_text.snap),
+		App.hd_text.render_mode.selected,
 		// boolString(App.hd_orbs.active),
 		// boolString(App.hd_orbs.centered),
 		boolString(App.mini_map.active),
@@ -360,7 +392,33 @@ void loadIni()
 		App.hd_cursor = getBool("Feature", "hd_cursor", App.hd_cursor);
 		App.hd_item.active = getBool("Feature", "hd_item", App.hd_item.active);
 		App.hd_text.active = getBool("Feature", "hd_text", App.hd_text.active);
-		App.hd_text.scale.value = ISHDTEXT() ? 1.0f : getFloat("Feature", "hd_text_scale", App.hd_text.scale);
+
+		// hd_text_scale used to be a 0.8..1.2 multiplier; the options menu now
+		// edits it in percent. Anything <= 3 is an old-format value.
+		Range<float> raw_scale = { 100.0f, 0.0f, 1000.0f };
+		float scale = ISHDTEXT() ? 100.0f : getFloat("Feature", "hd_text_scale", raw_scale);
+		if (scale <= 3.0f)
+			scale *= 100.0f;
+		App.hd_text.scale.value = glm::clamp(scale, App.hd_text.scale.min, App.hd_text.scale.max);
+
+		char font_path[512] = "";
+		if (getValue("Feature", "hd_text_font", font_path, sizeof(font_path)))
+			App.hd_text.font_file = font_path;
+		App.hd_text.font_index = getInt("Feature", "hd_text_font_index", App.hd_text.font_index, 0, 64);
+
+		App.hd_text.char_width.value = getFloat("Feature", "hd_text_char_width", App.hd_text.char_width);
+		App.hd_text.line_height.value = getFloat("Feature", "hd_text_line_height", App.hd_text.line_height);
+		App.hd_text.letter_spacing.value = getFloat("Feature", "hd_text_letter_spacing", App.hd_text.letter_spacing);
+		App.hd_text.baseline.value = getFloat("Feature", "hd_text_baseline", App.hd_text.baseline);
+		App.hd_text.stroke.value = getFloat("Feature", "hd_text_stroke", App.hd_text.stroke);
+		App.hd_text.bold.value = getFloat("Feature", "hd_text_bold", App.hd_text.bold);
+		App.hd_text.solidity.value = getFloat("Feature", "hd_text_solidity", App.hd_text.solidity);
+		App.hd_text.center.value = getFloat("Feature", "hd_text_center", App.hd_text.center);
+		App.hd_text.sharpness.value = getFloat("Feature", "hd_text_sharpness", App.hd_text.sharpness);
+		App.hd_text.border.value = getFloat("Feature", "hd_text_border", App.hd_text.border);
+		App.hd_text.shadow_offset.value = getFloat("Feature", "hd_text_shadow_offset", App.hd_text.shadow_offset);
+		App.hd_text.snap = getBool("Feature", "hd_text_snap", App.hd_text.snap);
+		App.hd_text.render_mode.selected = getInt("Feature", "hd_text_render_mode", App.hd_text.render_mode.selected, 0, 1);
 
 		// App.hd_orbs.active = getBool("Feature", "hd_orbs", App.hd_orbs.active);
 		// App.hd_orbs.centered = getBool("Feature", "hd_orbs_centered", App.hd_orbs.centered);

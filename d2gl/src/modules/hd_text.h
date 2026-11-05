@@ -19,7 +19,10 @@
 #pragma once
 
 #include "d2/structs.h"
+#include "graphic/texture.h"
 #include "hd_text/font.h"
+
+#include <mutex>
 
 namespace d2gl::modules {
 
@@ -46,6 +49,16 @@ class HDText {
 	std::unique_ptr<Object> m_object_bg;
 	std::vector<GlyphSet*> m_glyph_sets;
 	uint32_t m_lang_id = 0;
+
+	// Guards m_fonts / m_glyph_sets against the live font reload, which runs on
+	// the render thread while the game thread may still be drawing text.
+	std::recursive_mutex m_font_mutex;
+	std::vector<std::vector<std::string>> m_font_infos;
+	std::unordered_map<std::string, std::pair<std::string, int>> m_font_map;
+	std::unique_ptr<Texture> m_font_owner;      // current SDF (R8) or MSDF (RGBA8) atlas
+	std::unique_ptr<Texture> m_prev_font_owner; // held one generation for in-flight uploads
+	Texture* m_font_texture = nullptr;
+	std::vector<GlyphSet*> m_retired_sets; // old sets stay alive for their workers
 	uint32_t m_text_size = 1;
 	uint32_t m_last_text_height = 0;
 	uint32_t m_last_text_width = 0;
@@ -87,6 +100,10 @@ public:
 
 	void reset();
 	void update();
+
+	// Rebuilds every runtime SDF glyph set with the current font settings and
+	// clears the glyph cache/atlas. Must be called on the render thread.
+	bool reloadFonts();
 	void updateFontSize();
 
 	bool drawText(const wchar_t* str, int x, int y, uint32_t color, uint32_t centered, uint32_t trans_lvl = 5);
@@ -117,6 +134,10 @@ public:
 	static void drawItemQuantity(bool draw, int x = 0, int y = 0);
 
 private:
+	bool setupRuntimeFonts();
+	bool setupMsdfFonts();
+	void makeFont(const std::vector<std::string>& info, GlyphSet* set);
+
 	void drawMonsterHealthBar(d2::UnitAny* unit);
 	void drawPlayerHealthBar(d2::UnitAny* unit);
 

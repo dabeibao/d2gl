@@ -18,8 +18,11 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #pragma once
 
+#include "sdf_font.h"
+
 #include <atomic>
 #include <condition_variable>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -44,6 +47,11 @@ struct CompletedPage {
 	uint64_t start_ts;
 };
 
+struct CompletedSdfGlyph {
+	wchar_t cc;
+	SdfGlyphBitmap bitmap;
+};
+
 class GlyphSet {
 	std::unordered_map<wchar_t, Glyph> m_glyphes;
 	std::unordered_map<wchar_t, Glyph>* m_symbols = nullptr;
@@ -62,12 +70,23 @@ class GlyphSet {
 	std::vector<CompletedPage> m_completed;
 	std::atomic<int> m_pending_tasks{ 0 };
 
+	// Runtime SDF mode (DirectWrite). When set, the CSV/PNG page path is unused
+	// and glyphs are rasterized on demand into the same texture array.
+	std::unique_ptr<SdfFont> m_sdf;
+	std::vector<CompletedSdfGlyph> m_sdf_completed;
+	std::unordered_map<wchar_t, uint8_t> m_sdf_queued;
+
+	Glyph* getSdfGlyph(wchar_t c);
+
 public:
 	GlyphSet(Texture* texture, const std::string& name, GlyphSet* symbol_set = nullptr);
+	GlyphSet(Texture* texture, const std::string& name, const std::string& font_path, int face_index, int render_mode = 0);
 	~GlyphSet();
 
 	const Glyph* getGlyph(wchar_t c);
 	inline bool isSymbol() { return m_is_symbol; }
+	inline bool isSdf() { return m_sdf != nullptr; }
+	inline bool isSdfLoaded() { return m_sdf && m_sdf->isLoaded(); }
 	inline std::unordered_map<wchar_t, Glyph>* getGlyphes() { return &m_glyphes; }
 
 	void initLoadPages(const std::vector<int>& pages);

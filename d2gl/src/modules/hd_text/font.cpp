@@ -57,7 +57,7 @@ glm::vec2 Font::getTextSize(const wchar_t* str, const int max_chars)
 				line_num++;
 			}
 		} else if (auto glyph = m_glyph_set->getGlyph(str[char_num])) {
-			advance += glyph->advance * m_scale;
+			advance += glyph->advance * m_scale * getCharWidth();
 			if (str[char_num + 1] != L'\n' && str[char_num + 1] != L'\0')
 				advance += letter_spacing;
 		}
@@ -81,6 +81,7 @@ void Font::drawText(const wchar_t* str, glm::vec2 pos, uint32_t color, bool fram
 	auto text_offset = getTextOffset();
 
 	glm::vec2 offset = text_offset;
+	offset.y += App.hd_text.baseline.value * m_font_size;
 	if (framed) {
 		offset.x = text_offset.x = 0.0f;
 		offset.y += (float)m_line_count * line_height - line_height;
@@ -140,24 +141,38 @@ void Font::drawText(const wchar_t* str, glm::vec2 pos, uint32_t color, bool fram
 float Font::drawChar(wchar_t c, glm::vec2 pos, uint32_t color)
 {
 	if (auto glyph = m_glyph_set->getGlyph(c)) {
+		const float char_width = getCharWidth();
+		const float advance = glyph->advance * m_scale * char_width;
+
 		if (c == L' ')
-			return glyph->advance * m_scale;
+			return advance;
 
 		// Skip rendering if the glyph's page hasn't been loaded yet
 		// (tex_id == 0xFFFF sentinel from pre-population). Return the
 		// correct advance so text layout stays valid.
 		if (glyph->tex_id == 0xFFFF)
-			return glyph->advance * m_scale;
+			return advance;
 
-		glm::vec2 object_pos = pos + glyph->offset * m_scale;
+		glm::vec2 object_pos = { pos.x + glyph->offset.x * m_scale * char_width, pos.y + glyph->offset.y * m_scale };
 		float weight = m_weight;
-		if (m_glyph_set->isSymbol()) {
+		if (m_glyph_set->isSdf()) {
+			// Runtime SDF branch: extra.y is an absolute pixel shift made of
+			// the stroke multiplier plus the explicit bold width.
+			weight = (App.hd_text.stroke.value - 1.0f) * m_font_size * 0.06f + App.hd_text.bold.value;
+		} else if (m_glyph_set->isSymbol()) {
 			object_pos.y += m_font_size * m_symbol_offset;
 			weight = 1.0f + ((m_weight - 1.0f) * 0.5f);
 		}
 
-		m_object->setSize(glyph->size * m_scale);
-		m_object->setTexIds({ glyph->tex_id, 0 });
+		// Pixel snapping keeps the SDF glyphs aligned with the output pixels.
+		if (m_glyph_set->isSdf() && App.hd_text.snap) {
+			object_pos.x = floorf(object_pos.x + 0.5f);
+			object_pos.y = floorf(object_pos.y + 0.5f);
+		}
+
+		m_object->setSize({ glyph->size.x * m_scale * char_width, glyph->size.y * m_scale });
+		// tex_ids.y selects the shader glyph source: 0 = MSDF atlas, 1 = runtime SDF
+		m_object->setTexIds({ glyph->tex_id, (int16_t)(m_glyph_set->isSdf() ? 1 : 0) });
 		m_object->setTexCoord(glyph->tex_coord);
 		m_object->setPosition(object_pos);
 		m_object->setColor(color);
@@ -171,7 +186,7 @@ float Font::drawChar(wchar_t c, glm::vec2 pos, uint32_t color)
 		m_object->setFlags(3, 0, m_masking, m_bordered);
 		App.context->pushObject(m_object);
 
-		return glyph->advance * m_scale;
+		return advance;
 	}
 
 	return 0.0f;

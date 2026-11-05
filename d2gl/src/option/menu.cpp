@@ -81,6 +81,57 @@ static float getScale(HWND hwnd) {
     return dpi / 96.0f;
 }
 
+// Scans data\assets\fonts for selectable runtime SDF fonts. Index 0 follows
+// fonts.txt (or MSDF if it is absent); index 1 forces the built-in MSDF atlas.
+static void refreshFontList(std::vector<std::string>& paths, Select<int>& select)
+{
+	paths.clear();
+	select.items.clear();
+
+	paths.emplace_back();
+	select.items.push_back({ "默认 (fonts.txt / 自动)", 0 });
+	paths.emplace_back(kMsdfFontMarker);
+	select.items.push_back({ "内置 MSDF 图集", 1 });
+
+	std::vector<std::pair<std::string, std::string>> files;
+	std::error_code ec;
+	for (auto it = std::filesystem::directory_iterator("data\\assets\\fonts", ec);
+		 !ec && it != std::filesystem::directory_iterator(); it.increment(ec)) {
+		if (!it->is_regular_file(ec))
+			continue;
+
+		auto ext = it->path().extension().string();
+		std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) { return (char)::tolower(c); });
+		if (ext != ".ttf" && ext != ".otf" && ext != ".ttc")
+			continue;
+
+		files.emplace_back(it->path().filename().string(), it->path().string());
+	}
+	std::sort(files.begin(), files.end());
+
+	for (const auto& file : files) {
+		select.items.push_back({ file.first, (int)paths.size() });
+		paths.push_back(file.second);
+	}
+
+	select.selected = 0;
+	if (!App.hd_text.font_file.empty()) {
+		bool found = false;
+		for (size_t i = 1; i < paths.size(); i++) {
+			if (_stricmp(paths[i].c_str(), App.hd_text.font_file.c_str()) == 0) {
+				select.selected = (int)i;
+				found = true;
+				break;
+			}
+		}
+		if (!found) {
+			select.items.push_back({ App.hd_text.font_file, (int)paths.size() });
+			paths.push_back(App.hd_text.font_file);
+			select.selected = (int)paths.size() - 1;
+		}
+	}
+}
+
 Menu::Menu()
 {
 	if (App.menu_scale) {
@@ -429,12 +480,6 @@ void Menu::draw()
 				d2::patch_hd_text->toggle(App.hd_text.active);
 				saveBool("Feature", "hd_text", App.hd_text.active);
 			}
-			ImGui::BeginDisabled(!App.hd_text.active || ISHDTEXT());
-				drawSlider_m(float, "", App.hd_text.scale, "%.3f", "全局高清字体缩放", hd_text_scale)
-					saveFloat("Feature", "hd_text_scale", App.hd_text.scale.value);
-				if (App.hd_text.active)
-					modules::HDText::Instance().updateFontSize();
-			ImGui::EndDisabled();
 			drawSeparator();
 			ImGui::BeginDisabled(!ISGLIDE3X() || !App.mini_map.available);
 				drawCheckbox_m("小地图", App.mini_map.active, "始终显示在小地图组件上", mini_map)
@@ -493,6 +538,115 @@ void Menu::draw()
 			drawCheckbox_m("显示 FPS", App.show_fps, "在底部中央显示 FPS 计数器", show_fps)
 				saveBool("Feature", "show_fps", App.show_fps);
 			childEnd();
+			tabEnd();
+		}
+		if (tabBegin("字体", 4, &active_tab)) {
+			static bool font_changed = false;
+			static bool font_restart_pending = false;
+
+			childBegin("##font0", true, true);
+			ImGui::BeginDisabled(ISHDTEXT());
+
+			static std::vector<std::string> font_paths;
+			static Select<int> font_files;
+			static bool font_list_ready = false;
+			static int opt_font_file = 0;
+			if (!font_list_ready) {
+				refreshFontList(font_paths, font_files);
+				opt_font_file = font_files.selected;
+				font_list_ready = true;
+			}
+
+			if (!App.hd_text.active)
+				drawDescription("提示: 请先在 [功能] 页启用 高清字体。", m_colors[Color::Gray], 12);
+
+			drawLabel("本地字体", m_colors[Color::Orange], 17);
+			ImGui::SameLine();
+			drawDescription("字体放入data\\assets\\fonts", m_colors[Color::Gray], 12);
+
+			if (drawCombo("", &font_files, "", true, &opt_font_file, 17)) {
+				App.hd_text.font_file = font_files.selected < (int)font_paths.size() ? font_paths[font_files.selected] : std::string();
+				saveString("Feature", "hd_text_font", App.hd_text.font_file);
+				font_changed = true;
+				// Rebuild glyph sets and the atlas immediately; fall back to a
+				// restart hint if the new font cannot be loaded live.
+				font_restart_pending = !modules::HDText::Instance().reloadFonts();
+			}
+			ImGui::SameLine();
+			if (drawButton("刷新列表", { 96.0f * m_scale, 29.0f * m_scale }, 15)) {
+				refreshFontList(font_paths, font_files);
+				opt_font_file = font_files.selected;
+			}
+			if (font_restart_pending)
+				drawDescription("字体切换失败, 重启游戏后生效", m_colors[Color::Orange], 12);
+
+			drawCombo_m("渲染方式", App.hd_text.render_mode, "", false, 17, hd_render_mode)
+			{
+				saveInt("Feature", "hd_text_render_mode", App.hd_text.render_mode.selected);
+				font_changed = true;
+				font_restart_pending = !modules::HDText::Instance().reloadFonts();
+			}
+			drawSeparator();
+
+			drawSlider_m(float, "字号", App.hd_text.scale, "%.0f", "整体字体大小 (百分比)", hd_text_size)
+			{
+				font_changed = true;
+				if (App.hd_text.active)
+					modules::HDText::Instance().updateFontSize();
+			}
+			drawSlider_m(float, "字宽", App.hd_text.char_width, "%.0f", "字形横向缩放 (百分比)", hd_text_char_width)
+				font_changed = true;
+			drawSlider_m(float, "行高", App.hd_text.line_height, "%.0f", "行距 (百分比)", hd_text_line_height)
+				font_changed = true;
+			drawSlider_m(float, "字距", App.hd_text.letter_spacing, "%.2f", "额外字间距 (em)", hd_text_letter_spacing)
+				font_changed = true;
+			drawSlider_m(float, "基线", App.hd_text.baseline, "%.2f", "整体垂直偏移 (em)", hd_text_baseline)
+				font_changed = true;
+			drawCheckbox_m("像素对齐", App.hd_text.snap, "字形位置对齐到整数像素", snap)
+				font_changed = true;
+
+			childSeparator("##font1", true);
+
+			drawSlider_m(float, "笔画增强", App.hd_text.stroke, "%.2f", "字形加粗强度", hd_text_stroke)
+				font_changed = true;
+			drawSlider_m(float, "加粗(px)", App.hd_text.bold, "%.2f", "额外的像素加粗量", hd_text_bold)
+				font_changed = true;
+			drawSlider_m(float, "实心度", App.hd_text.solidity, "%.2f", "提高字形内部实心程度", hd_text_solidity)
+				font_changed = true;
+			drawSlider_m(float, "中心提亮", App.hd_text.center, "%.2f", "字形中心向白色提亮, 边缘不变", hd_text_center)
+				font_changed = true;
+			drawSlider_m(float, "边缘锐化", App.hd_text.sharpness, "%.2f", "SDF 边缘过渡宽度 (越大越锐)", hd_text_sharpness)
+				font_changed = true;
+			drawSlider_m(float, "描边宽度", App.hd_text.border, "%.2f", "带边框字体的描边粗细", hd_text_border)
+				font_changed = true;
+			drawSlider_m(float, "阴影偏移", App.hd_text.shadow_offset, "%.2f", "阴影距离 (32px-em 单位)", hd_text_shadow_offset)
+				font_changed = true;
+			drawDescription("以上效果仅影响运行时 SDF 字体。", m_colors[Color::Gray], 12);
+
+			ImGui::EndDisabled();
+			childEnd();
+
+			ImGui::BeginDisabled(!font_changed);
+			if (drawNav("保存更改")) {
+				saveFloat("Feature", "hd_text_scale", App.hd_text.scale.value);
+				saveFloat("Feature", "hd_text_char_width", App.hd_text.char_width.value);
+				saveFloat("Feature", "hd_text_line_height", App.hd_text.line_height.value);
+				saveFloat("Feature", "hd_text_letter_spacing", App.hd_text.letter_spacing.value);
+				saveFloat("Feature", "hd_text_baseline", App.hd_text.baseline.value);
+				saveFloat("Feature", "hd_text_stroke", App.hd_text.stroke.value);
+				saveFloat("Feature", "hd_text_bold", App.hd_text.bold.value);
+				saveFloat("Feature", "hd_text_solidity", App.hd_text.solidity.value);
+				saveFloat("Feature", "hd_text_center", App.hd_text.center.value);
+				saveFloat("Feature", "hd_text_sharpness", App.hd_text.sharpness.value);
+				saveFloat("Feature", "hd_text_border", App.hd_text.border.value);
+				saveFloat("Feature", "hd_text_shadow_offset", App.hd_text.shadow_offset.value);
+				saveBool("Feature", "hd_text_snap", App.hd_text.snap);
+				saveInt("Feature", "hd_text_render_mode", App.hd_text.render_mode.selected);
+				saveString("Feature", "hd_text_font", App.hd_text.font_file);
+				saveInt("Feature", "hd_text_font_index", App.hd_text.font_index);
+				font_changed = false;
+			}
+			ImGui::EndDisabled();
 			tabEnd();
 		}
 #ifdef _HDTEXT

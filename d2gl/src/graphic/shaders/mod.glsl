@@ -73,6 +73,11 @@ uniform vec4 u_TextMask;
 uniform vec4 u_Viewport;
 uniform bool u_IsMasking = false;
 uniform bool u_IsGlide = true;
+uniform float u_FontSolid = 1.0;
+uniform float u_FontSharp = 1.0;
+uniform float u_FontBorder = 1.0;
+uniform float u_FontShadowOffset = 1.5;
+uniform float u_FontCenter = 0.25;
 
 float msdf(vec3 rgb, float smoothess, float weight)
 {
@@ -93,20 +98,52 @@ void main()
 		case 1u: FragColor = texture(u_CursorTexture, vec3(v_TexCoord, v_TexIds.x)) * v_Color1; break;
 		case 2u: FragColor = v_Color1; break;
 		case 3u: {
-			vec4 color = texture(u_FontTexture, vec3(v_TexCoord, v_TexIds.x));
-			if(v_Flags.y > 0u) {
-				float mlt = v_Flags.y == 1u ? 1.0 : 0.5;
-				FragColor = vec4((v_Color1.r + v_Color1.g + v_Color1.b) < 0.1 ? 0.8 : 0.0);
-				FragColor.a = (color.a < 0.26 ? 0.0 : smoothstep(0.0, 1.0, color.a)) * mlt * v_Extra.x;
-			} else {
-				if (v_Flags.w == 1u) {
-					float opacity1 = msdf(color.rgb, v_Extra.x, v_Extra.y + 0.02);
-					float opacity2 = msdf(color.rgb, v_Extra.x, 1.01);
-					FragColor = vec4(mix(v_Color2.rgb, v_Color1.rgb, opacity2), v_Color1.a * opacity1);
+			if (v_TexIds.y == 1) {
+				// Runtime SDF glyph (DirectWrite): 0.5 == edge, +-6px range at a
+				// 32px em. extra.x is the font pixel size, extra.y the weight.
+				float sdf = texture(u_FontTexture, vec3(v_TexCoord, v_TexIds.x)).r;
+				if (v_Flags.y > 0u) {
+					float mlt = v_Flags.y == 1u ? 1.0 : 0.5;
+					// Sample down-right for the drop shadow; 2 texels == one
+					// 32px-em unit at the 64px SDF resolution. The cell padding
+					// keeps this inside the glyph's own atlas slot.
+					vec2 shadow_offset = vec2(2.0 / 1024.0) * u_FontShadowOffset;
+					float shadow = texture(u_FontTexture, vec3(v_TexCoord - shadow_offset, v_TexIds.x)).r;
+					FragColor = vec4((v_Color1.r + v_Color1.g + v_Color1.b) < 0.1 ? 0.8 : 0.0);
+					FragColor.a = smoothstep(0.42, 0.58, shadow) * mlt * v_Extra.x;
 				} else {
-					float scale = smoothstep(1.5, 1.0, u_Scale.x);
-					float opacity = msdf(color.rgb, v_Extra.x / (1.0 + scale), v_Extra.y);
-					FragColor = vec4(v_Color1.rgb, v_Color1.a * opacity * (1.0 + 0.20 * scale));
+					// extra.y is an absolute pixel dilation (stroke + bold).
+					float dist = (sdf * 2.0 - 1.0) * 6.0 * (v_Extra.x / 32.0) * max(u_FontSharp, 0.1) + v_Extra.y;
+					float solid = max(u_FontSolid, 0.01);
+					// Center brightening: deep-inside pixels mix slightly toward white
+					// so thin/small SDF text reads as bright as the MSDF path.
+					float center = clamp(dist * 0.75, 0.0, 1.0) * u_FontCenter;
+					vec3 fill = mix(v_Color1.rgb, vec3(1.0), center);
+					if (v_Flags.w == 1u) {
+						float border = max(0.75, v_Extra.x * 0.04) * u_FontBorder;
+						float inner = pow(clamp(dist + 0.5, 0.0, 1.0), 1.0 / solid);
+						float outer = pow(clamp(dist + border + 0.5, 0.0, 1.0), 1.0 / solid);
+						FragColor = vec4(mix(v_Color2.rgb, fill, inner), v_Color1.a * outer);
+					} else {
+						FragColor = vec4(fill, v_Color1.a * pow(clamp(dist + 0.5, 0.0, 1.0), 1.0 / solid));
+					}
+				}
+			} else {
+				vec4 color = texture(u_FontTexture, vec3(v_TexCoord, v_TexIds.x));
+				if(v_Flags.y > 0u) {
+					float mlt = v_Flags.y == 1u ? 1.0 : 0.5;
+					FragColor = vec4((v_Color1.r + v_Color1.g + v_Color1.b) < 0.1 ? 0.8 : 0.0);
+					FragColor.a = (color.a < 0.26 ? 0.0 : smoothstep(0.0, 1.0, color.a)) * mlt * v_Extra.x;
+				} else {
+					if (v_Flags.w == 1u) {
+						float opacity1 = msdf(color.rgb, v_Extra.x, v_Extra.y + 0.02);
+						float opacity2 = msdf(color.rgb, v_Extra.x, 1.01);
+						FragColor = vec4(mix(v_Color2.rgb, v_Color1.rgb, opacity2), v_Color1.a * opacity1);
+					} else {
+						float scale = smoothstep(1.5, 1.0, u_Scale.x);
+						float opacity = msdf(color.rgb, v_Extra.x / (1.0 + scale), v_Extra.y);
+						FragColor = vec4(v_Color1.rgb, v_Color1.a * opacity * (1.0 + 0.20 * scale));
+					}
 				}
 			}
 			if (u_IsMasking && v_Flags.z == 0u) {

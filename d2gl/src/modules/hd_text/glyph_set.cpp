@@ -22,6 +22,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "helpers.h"
 #include <log.h>
 #include <sysinfoapi.h>
+#include <cstdlib>
 
 #include "page_load_pool.h"
 
@@ -95,6 +96,14 @@ GlyphSet::GlyphSet(Texture* texture, const std::string& name, GlyphSet* symbol_s
 	}
 }
 
+GlyphSet::GlyphSet(Texture* texture, const std::string& name, const std::string& font_path, int face_index, int render_mode)
+	: m_name(name)
+	, m_texture(texture)
+	, m_sdf(std::make_unique<SdfFont>())
+{
+	m_sdf->load(font_path, face_index, render_mode);
+}
+
 GlyphSet::~GlyphSet()
 {
 	std::unique_lock<std::mutex> lock(m_mutex);
@@ -102,6 +111,11 @@ GlyphSet::~GlyphSet()
 
 	for (auto& comp : m_completed)
 		helpers::clearImage(comp.image);
+
+	for (auto& comp : m_sdf_completed) {
+		free(comp.bitmap.pixels);
+		comp.bitmap.pixels = nullptr;
+	}
 }
 
 void GlyphSet::initLoadPages(const std::vector<int>& pages)
@@ -132,6 +146,9 @@ const Glyph* GlyphSet::getGlyph(wchar_t c)
 	// Normalize non-breaking space to regular space
 	if (c == L'\xa0')
 		c = L' ';
+
+	if (m_sdf)
+		return getSdfGlyph(c);
 
 	auto it = m_glyphes.find(c);
 	if (it != m_glyphes.end())
@@ -195,6 +212,57 @@ const Glyph* GlyphSet::getGlyph(wchar_t c)
 	return nullptr;
 }
 
+Glyph* GlyphSet::getSdfGlyph(wchar_t c)
+{
+	auto it = m_glyphes.find(c);
+	if (it != m_glyphes.end())
+		return &it->second;
+
+	if (c < 0x20) {
+		Glyph dummy = {};
+		dummy.tex_id = 0xFFFF;
+		return &m_glyphes.emplace(c, dummy).first->second;
+	}
+
+	// Metrics come from DirectWrite synchronously so text width and wrapping
+	// stay correct while the SDF bitmap is still being generated on a worker.
+	const SdfGlyphMetrics* metrics = m_sdf->getMetrics(c);
+	Glyph glyph = {};
+	glyph.tex_id = 0xFFFF;
+
+	if (!metrics || metrics->index == 0)
+		return &m_glyphes.emplace(c, glyph).first->second;
+
+	glyph.advance = metrics->advance;
+	glyph.size = { (float)metrics->width, (float)metrics->height };
+	// D2's text origin is the baseline of the last line, so the glyph box is
+	// placed by its top bearing alone (no ascent offset).
+	glyph.offset = { metrics->left, metrics->top };
+
+	auto& stored = m_glyphes.emplace(c, glyph).first->second;
+
+	const bool drawable = c != L' ' && metrics->width > 0 && metrics->height > 0;
+	if (drawable && m_sdf_queued.find(c) == m_sdf_queued.end()) {
+		m_sdf_queued[c] = 1;
+		m_pending_tasks++;
+
+		PageLoadPool::instance().submit([this, c]() {
+			SdfGlyphBitmap bitmap;
+			if (m_sdf->rasterize(c, bitmap)) {
+				std::lock_guard<std::mutex> lock(m_mutex);
+				CompletedSdfGlyph completed;
+				completed.cc = c;
+				completed.bitmap = bitmap;
+				m_sdf_completed.push_back(std::move(completed));
+			}
+			m_pending_tasks--;
+			m_destroy_cv.notify_one();
+		});
+	}
+
+	return &stored;
+}
+
 void GlyphSet::loadPageAsync(int page_index)
 {
 	{
@@ -244,6 +312,50 @@ void GlyphSet::loadPageAsync(int page_index)
 
 void GlyphSet::pollCompletions(CommandBuffer* cmd_buf)
 {
+	if (m_sdf) {
+		std::vector<CompletedSdfGlyph> glyphs;
+		{
+			std::lock_guard<std::mutex> lock(m_mutex);
+			glyphs.swap(m_sdf_completed);
+		}
+
+		for (auto& comp : glyphs) {
+			auto it = m_glyphes.find(comp.cc);
+			if (it == m_glyphes.end()) {
+				free(comp.bitmap.pixels);
+				continue;
+			}
+
+			const auto idx = m_texture->advanceNextIndex();
+			if (idx.layer >= m_texture->getLayerCount()) {
+				error_log("[HDText] SDF atlas full, glyph U+%04X dropped", (uint32_t)comp.cc);
+				free(comp.bitmap.pixels);
+				continue;
+			}
+
+			const uint32_t cell_x = (idx.index % (uint32_t)s_index_per_row) * (uint32_t)s_atlas_size;
+			const uint32_t cell_y = (idx.index / (uint32_t)s_index_per_row) * (uint32_t)s_atlas_size;
+			const float inv_size = 1.0f / (float)s_texture_size;
+
+			Glyph& glyph = it->second;
+			glyph.tex_id = (uint16_t)idx.layer;
+			// Object::setTexCoord maps the quad's top edge to tex_coord.w and
+			// the bottom edge to tex_coord.y; our SDF rows are uploaded top-down.
+			glyph.tex_coord = {
+				(float)cell_x * inv_size,
+				(float)(cell_y + comp.bitmap.height) * inv_size,
+				(float)(cell_x + comp.bitmap.width) * inv_size,
+				(float)cell_y * inv_size
+			};
+			// Quad size stays in 32-em units; the bitmap itself is 2x.
+			glyph.size = { comp.bitmap.metrics.width, comp.bitmap.metrics.height };
+
+			ImageData image = { comp.bitmap.width, comp.bitmap.height, 1, comp.bitmap.pixels };
+			cmd_buf->pushFontPage(image, idx.layer, m_texture, cell_x, cell_y);
+		}
+		return;
+	}
+
 	std::vector<CompletedPage> pages;
 	{
 		std::lock_guard<std::mutex> lock(m_mutex);

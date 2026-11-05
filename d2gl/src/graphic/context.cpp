@@ -760,6 +760,11 @@ void Context::drawOverlay(CommandBuffer* cmd, uint32_t frame_index)
 		VertexMod::bindingDescription();
 		bindPipeline(m_overlay_pipeline, 0);
 		m_overlay_pipeline->setUniform1i("u_HasMask", cmd->m_has_mask);
+		m_overlay_pipeline->setUniform1f("u_FontSolid", App.hd_text.solidity.value);
+		m_overlay_pipeline->setUniform1f("u_FontCenter", App.hd_text.center.value);
+		m_overlay_pipeline->setUniform1f("u_FontSharp", App.hd_text.sharpness.value);
+		m_overlay_pipeline->setUniform1f("u_FontBorder", App.hd_text.border.value);
+		m_overlay_pipeline->setUniform1f("u_FontShadowOffset", App.hd_text.shadow_offset.value);
 		if (cmd->m_hd_text_mask.active) {
 			m_overlay_pipeline->setUniformVec4f("u_TextMask", cmd->m_hd_text_mask.metrics);
 			m_overlay_pipeline->setUniform1i("u_IsMasking", cmd->m_hd_text_mask.masking);
