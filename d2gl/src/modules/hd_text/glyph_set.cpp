@@ -212,11 +212,77 @@ const Glyph* GlyphSet::getGlyph(wchar_t c)
 	return nullptr;
 }
 
+static uint32_t currentFrame()
+{
+	return App.context ? App.context->getFrameCount() : 0;
+}
+
+uint32_t GlyphSet::allocSdfSlot(wchar_t c)
+{
+	(void)c;
+	if (m_sdf_next_slot < kMaxGlyphs)
+		return m_sdf_next_slot++;
+
+	// Cache full: evict the least recently used glyph. Its node is kept but
+	// invalidated so a Glyph* held by the game thread stays valid.
+	wchar_t victim = 0;
+	uint32_t victim_tick = UINT32_MAX;
+	bool found = false;
+	for (const auto& [ch, slot] : m_sdf_slot) {
+		const auto it = m_sdf_use.find(ch);
+		const uint32_t tick = it != m_sdf_use.end() ? it->second : 0;
+		if (!found || tick < victim_tick) {
+			found = true;
+			victim = ch;
+			victim_tick = tick;
+		}
+	}
+	if (!found)
+		return UINT32_MAX;
+
+	const uint32_t slot = m_sdf_slot[victim];
+	m_sdf_slot.erase(victim);
+	m_sdf_use.erase(victim);
+	m_sdf_queued.erase(victim);
+	const auto glyph_it = m_glyphes.find(victim);
+	if (glyph_it != m_glyphes.end())
+		glyph_it->second.tex_id = 0xFFFF;
+	return slot;
+}
+
 Glyph* GlyphSet::getSdfGlyph(wchar_t c)
 {
+	std::lock_guard<std::mutex> lock(m_mutex);
+	const uint32_t frame = currentFrame();
+
+	auto queue_raster = [this, c]() {
+		if (m_sdf_queued.find(c) != m_sdf_queued.end())
+			return;
+		m_sdf_queued[c] = 1;
+		m_pending_tasks++;
+		PageLoadPool::instance().submit([this, c]() {
+			SdfGlyphBitmap bitmap;
+			if (m_sdf->rasterize(c, bitmap)) {
+				std::lock_guard<std::mutex> lock(m_mutex);
+				CompletedSdfGlyph completed;
+				completed.cc = c;
+				completed.bitmap = bitmap;
+				m_sdf_completed.push_back(std::move(completed));
+			}
+			m_pending_tasks--;
+			m_destroy_cv.notify_one();
+		});
+	};
+
 	auto it = m_glyphes.find(c);
-	if (it != m_glyphes.end())
-		return &it->second;
+	if (it != m_glyphes.end()) {
+		Glyph& glyph = it->second;
+		m_sdf_use[c] = frame;
+		// Evicted by LRU: rasterize it again.
+		if (glyph.tex_id == 0xFFFF && glyph.size.x > 0.0f && glyph.size.y > 0.0f)
+			queue_raster();
+		return &glyph;
+	}
 
 	if (c < 0x20) {
 		Glyph dummy = {};
@@ -240,25 +306,11 @@ Glyph* GlyphSet::getSdfGlyph(wchar_t c)
 	glyph.offset = { metrics->left, metrics->top };
 
 	auto& stored = m_glyphes.emplace(c, glyph).first->second;
+	m_sdf_use[c] = frame;
 
 	const bool drawable = c != L' ' && metrics->width > 0 && metrics->height > 0;
-	if (drawable && m_sdf_queued.find(c) == m_sdf_queued.end()) {
-		m_sdf_queued[c] = 1;
-		m_pending_tasks++;
-
-		PageLoadPool::instance().submit([this, c]() {
-			SdfGlyphBitmap bitmap;
-			if (m_sdf->rasterize(c, bitmap)) {
-				std::lock_guard<std::mutex> lock(m_mutex);
-				CompletedSdfGlyph completed;
-				completed.cc = c;
-				completed.bitmap = bitmap;
-				m_sdf_completed.push_back(std::move(completed));
-			}
-			m_pending_tasks--;
-			m_destroy_cv.notify_one();
-		});
-	}
+	if (drawable)
+		queue_raster();
 
 	return &stored;
 }
@@ -313,32 +365,38 @@ void GlyphSet::loadPageAsync(int page_index)
 void GlyphSet::pollCompletions(CommandBuffer* cmd_buf)
 {
 	if (m_sdf) {
+		std::lock_guard<std::mutex> lock(m_mutex);
 		std::vector<CompletedSdfGlyph> glyphs;
-		{
-			std::lock_guard<std::mutex> lock(m_mutex);
-			glyphs.swap(m_sdf_completed);
-		}
+		glyphs.swap(m_sdf_completed);
 
 		for (auto& comp : glyphs) {
 			auto it = m_glyphes.find(comp.cc);
-			if (it == m_glyphes.end()) {
+			if (it == m_glyphes.end() || it->second.tex_id != 0xFFFF) {
 				free(comp.bitmap.pixels);
 				continue;
 			}
 
-			const auto idx = m_texture->advanceNextIndex();
-			if (idx.layer >= m_texture->getLayerCount()) {
-				error_log("[HDText] SDF atlas full, glyph U+%04X dropped", (uint32_t)comp.cc);
+			const uint32_t slot = allocSdfSlot(comp.cc);
+			if (slot == UINT32_MAX) {
+				error_log("[HDText] SDF cache full, glyph U+%04X dropped", (uint32_t)comp.cc);
 				free(comp.bitmap.pixels);
 				continue;
 			}
 
-			const uint32_t cell_x = (idx.index % (uint32_t)s_index_per_row) * (uint32_t)s_atlas_size;
-			const uint32_t cell_y = (idx.index / (uint32_t)s_index_per_row) * (uint32_t)s_atlas_size;
+			const uint32_t layer = slot / kSlotsPerLayer;
+			const uint32_t index = slot % kSlotsPerLayer;
+			if (layer >= m_texture->getLayerCount()) {
+				error_log("[HDText] SDF atlas layer out of range, glyph U+%04X dropped", (uint32_t)comp.cc);
+				free(comp.bitmap.pixels);
+				continue;
+			}
+
+			const uint32_t cell_x = (index % (uint32_t)s_index_per_row) * (uint32_t)s_atlas_size;
+			const uint32_t cell_y = (index / (uint32_t)s_index_per_row) * (uint32_t)s_atlas_size;
 			const float inv_size = 1.0f / (float)s_texture_size;
 
 			Glyph& glyph = it->second;
-			glyph.tex_id = (uint16_t)idx.layer;
+			glyph.tex_id = (uint16_t)layer;
 			// Object::setTexCoord maps the quad's top edge to tex_coord.w and
 			// the bottom edge to tex_coord.y; our SDF rows are uploaded top-down.
 			glyph.tex_coord = {
@@ -350,8 +408,11 @@ void GlyphSet::pollCompletions(CommandBuffer* cmd_buf)
 			// Quad size stays in 32-em units; the bitmap itself is 2x.
 			glyph.size = { comp.bitmap.metrics.width, comp.bitmap.metrics.height };
 
+			m_sdf_slot[comp.cc] = slot;
+			m_sdf_use[comp.cc] = currentFrame();
+
 			ImageData image = { comp.bitmap.width, comp.bitmap.height, 1, comp.bitmap.pixels };
-			cmd_buf->pushFontPage(image, idx.layer, m_texture, cell_x, cell_y);
+			cmd_buf->pushFontPage(image, layer, m_texture, cell_x, cell_y);
 		}
 		return;
 	}

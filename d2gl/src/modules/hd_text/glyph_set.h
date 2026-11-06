@@ -70,13 +70,21 @@ class GlyphSet {
 	std::vector<CompletedPage> m_completed;
 	std::atomic<int> m_pending_tasks{ 0 };
 
-	// Runtime SDF mode (DirectWrite). When set, the CSV/PNG page path is unused
-	// and glyphs are rasterized on demand into the same texture array.
+	// Runtime SDF mode (DirectWrite). Glyphs live in a fixed 128px-em atlas
+	// (2048 slots) and are evicted LRU when full. Nodes are never erased, only
+	// invalidated: the game thread can still hold a Glyph*.
+	static constexpr uint32_t kMaxGlyphs = 2048;
+	static constexpr uint32_t kSlotsPerLayer = 16; // (1024/256)^2
+
 	std::unique_ptr<SdfFont> m_sdf;
 	std::vector<CompletedSdfGlyph> m_sdf_completed;
 	std::unordered_map<wchar_t, uint8_t> m_sdf_queued;
+	std::unordered_map<wchar_t, uint32_t> m_sdf_slot;
+	std::unordered_map<wchar_t, uint32_t> m_sdf_use;
+	uint32_t m_sdf_next_slot = 0;
 
 	Glyph* getSdfGlyph(wchar_t c);
+	uint32_t allocSdfSlot(wchar_t c);
 
 public:
 	GlyphSet(Texture* texture, const std::string& name, GlyphSet* symbol_set = nullptr);
