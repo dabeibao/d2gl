@@ -54,11 +54,11 @@ struct SdfGlyphBitmap {
 // converted to a signed distance field and uploaded into the font texture array.
 class SdfFont {
 public:
-	static constexpr int kEmSize = 64;        // rasterization em (2x the 32-unit base)
-	static constexpr int kUnitScale = 2;      // 64px em -> 32-unit metrics divisor
+	static constexpr int kEmSize = 128;       // rasterization em (4x the 32-unit base)
+	static constexpr int kUnitScale = 4;      // 128px em -> 32-unit metrics divisor
 	static constexpr int kSpread = 6;         // signed distance range in 32-units
 	static constexpr int kSpreadPx = kSpread * kUnitScale; // same range in raster px
-	static constexpr int kCellSize = 128;     // atlas slot size at 64px em
+	static constexpr int kCellSize = 256;     // atlas slot size at 128px em
 	static constexpr int kCellPad = kSpreadPx; // blank margin around the glyph bbox
 
 	SdfFont() = default;

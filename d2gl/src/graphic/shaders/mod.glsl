@@ -104,10 +104,10 @@ void main()
 				float sdf = texture(u_FontTexture, vec3(v_TexCoord, v_TexIds.x)).r;
 				if (v_Flags.y > 0u) {
 					float mlt = v_Flags.y == 1u ? 1.0 : 0.5;
-					// Sample down-right for the drop shadow; 2 texels == one
-					// 32px-em unit at the 64px SDF resolution. The cell padding
+					// Sample down-right for the drop shadow; 4 texels == one
+					// 32px-em unit at the 128px SDF resolution. The cell padding
 					// keeps this inside the glyph's own atlas slot.
-					vec2 shadow_offset = vec2(2.0 / 1024.0) * u_FontShadowOffset;
+					vec2 shadow_offset = vec2(4.0 / 1024.0) * u_FontShadowOffset;
 					float shadow = texture(u_FontTexture, vec3(v_TexCoord - shadow_offset, v_TexIds.x)).r;
 					FragColor = vec4((v_Color1.r + v_Color1.g + v_Color1.b) < 0.1 ? 0.8 : 0.0);
 					FragColor.a = smoothstep(0.42, 0.58, shadow) * mlt * v_Extra.x;
@@ -136,7 +136,7 @@ void main()
 					FragColor.a = (color.a < 0.26 ? 0.0 : smoothstep(0.0, 1.0, color.a)) * mlt * v_Extra.x;
 				} else {
 					if (v_Flags.w == 1u) {
-						float opacity1 = msdf(color.rgb, v_Extra.x, v_Extra.y + 0.02);
+						float opacity1 = msdf(color.rgb, v_Extra.x, v_Extra.y + 0.02 * u_FontBorder);
 						float opacity2 = msdf(color.rgb, v_Extra.x, 1.01);
 						FragColor = vec4(mix(v_Color2.rgb, v_Color1.rgb, opacity2), v_Color1.a * opacity1);
 					} else {

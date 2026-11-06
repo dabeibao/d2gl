@@ -37,6 +37,7 @@
     <ClCompile Include="$(MSBuildThisFileDirectory)src\d2\item_color_lut.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\hd_item.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\modules\stats.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\modules\hd_text\sdf_font.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="$(MSBuildThisFileDirectory)src\app.h" />
@@ -78,6 +79,7 @@
     <ClInclude Include="$(MSBuildThisFileDirectory)src\hd_item.hpp" />
     <ClInclude Include="$(MSBuildThisFileDirectory)src\modules\stats.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)vendor\include\stb\stb_dxt.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)src\modules\hd_text\sdf_font.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="$(MSBuildThisFileDirectory)src\graphic\shaders\mod.glsl" />

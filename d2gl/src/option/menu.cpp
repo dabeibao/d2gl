@@ -617,7 +617,7 @@ void Menu::draw()
 				font_changed = true;
 			drawSlider_m(float, "边缘锐化", App.hd_text.sharpness, "%.2f", "SDF 边缘过渡宽度 (越大越锐)", hd_text_sharpness)
 				font_changed = true;
-			drawSlider_m(float, "描边宽度", App.hd_text.border, "%.2f", "带边框字体的描边粗细", hd_text_border)
+			drawSlider_m(float, "描边宽度", App.hd_text.border, "%.2f", "仅带边框字体槽 (2/3/7/18)", hd_text_border)
 				font_changed = true;
 			drawSlider_m(float, "阴影偏移", App.hd_text.shadow_offset, "%.2f", "阴影距离 (32px-em 单位)", hd_text_shadow_offset)
 				font_changed = true;
