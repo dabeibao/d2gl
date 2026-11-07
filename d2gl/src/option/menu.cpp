@@ -595,6 +595,8 @@ void Menu::draw()
 				font_changed = true;
 				font_restart_pending = !modules::HDText::Instance().reloadFonts();
 			}
+			drawSlider_m(float, "ASCII 加粗(px)", App.hd_text.ascii_bold, "%.2f", "仅 ASCII 字体的额外加粗, 用于和中文对齐字重", ascii_bold)
+				saveFloat("Feature", "hd_text_ascii_bold", App.hd_text.ascii_bold.value);
 
 			drawCombo_m("渲染方式", App.hd_text.render_mode, "", false, 17, hd_render_mode)
 			{

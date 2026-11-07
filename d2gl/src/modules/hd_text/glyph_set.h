@@ -94,7 +94,6 @@ class GlyphSet {
 	// face is optional and immutable after construction, so this is safe to
 	// call from the raster worker thread.
 	SdfFont* pickSdf(wchar_t c) { return (m_sdf_ascii && (uint32_t)c < kAsciiFaceLimit) ? m_sdf_ascii.get() : m_sdf.get(); }
-
 public:
 	GlyphSet(Texture* texture, const std::string& name, GlyphSet* symbol_set = nullptr);
 	GlyphSet(Texture* texture, const std::string& name, const std::string& font_path, int face_index, int render_mode = 0,
@@ -105,6 +104,9 @@ public:
 	inline bool isSymbol() { return m_is_symbol; }
 	inline bool isSdf() { return m_sdf != nullptr; }
 	inline bool isSdfLoaded() { return m_sdf && m_sdf->isLoaded(); }
+	// True when this codepoint is drawn by the optional ASCII face (so the
+	// caller can apply its own weight bias).
+	inline bool isAsciiChar(wchar_t c) { return m_sdf_ascii && (uint32_t)c < kAsciiFaceLimit; }
 	inline std::unordered_map<wchar_t, Glyph>* getGlyphes() { return &m_glyphes; }
 
 	void initLoadPages(const std::vector<int>& pages);

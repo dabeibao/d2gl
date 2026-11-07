@@ -156,6 +156,9 @@ struct D2GLApp {
 		Range<float> baseline = { 0.0f, -0.6f, 0.6f };        // 基线 (em)
 		Range<float> stroke = { 1.2f, 0.5f, 2.0f };           // 笔画增强
 		Range<float> bold = { 0.0f, 0.0f, 2.0f };             // 加粗 (px)
+		// Extra pixel weight for the ASCII face only (it is often a lighter cut
+		// than the atlas' Latin glyphs, so it needs its own bias).
+		Range<float> ascii_bold = { 0.0f, 0.0f, 2.0f };       // ASCII 加粗 (px)
 		Range<float> solidity = { 1.0f, 0.5f, 2.0f };         // 实心度
 		Range<float> center = { 0.10f, 0.0f, 1.0f };          // 中心提亮
 		// 1.0 == a one-physical-pixel edge ramp (see mod.glsl); below ~0.6 the

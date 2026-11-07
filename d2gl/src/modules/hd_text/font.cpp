@@ -159,6 +159,10 @@ float Font::drawChar(wchar_t c, glm::vec2 pos, uint32_t color)
 			// Runtime SDF branch: extra.y is an absolute pixel shift made of
 			// the stroke multiplier plus the explicit bold width.
 			weight = (App.hd_text.stroke.value - 1.0f) * m_font_size * 0.06f + App.hd_text.bold.value;
+			// The ASCII face is usually a lighter cut than the atlas' Latin, so
+			// it gets its own pixel bias instead of dragging 加粗 up for CJK too.
+			if (m_glyph_set->isAsciiChar(c))
+				weight += App.hd_text.ascii_bold.value;
 		} else if (m_glyph_set->isSymbol()) {
 			object_pos.y += m_font_size * m_symbol_offset;
 			weight = 1.0f + ((m_weight - 1.0f) * 0.5f);
@@ -182,7 +186,9 @@ float Font::drawChar(wchar_t c, glm::vec2 pos, uint32_t color)
 		m_object->setColor(color);
 
 		if (m_shadow_level > 0) {
-			m_object->setExtra({ m_shadow_intensity, 0.0f });
+			// extra.y carries the font size so the SDF shadow can scale its
+			// falloff with the glyph (see mod.glsl); the atlas path ignores it.
+			m_object->setExtra({ m_shadow_intensity, m_font_size });
 			m_object->setFlags(3, m_shadow_level, m_masking);
 			App.context->pushObject(m_object);
 		}

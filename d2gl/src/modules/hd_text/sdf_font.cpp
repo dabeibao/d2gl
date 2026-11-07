@@ -142,7 +142,10 @@ namespace {
 	// distance field stays at kEmSize. A 1-bit mask at 64px em puts the contour
 	// on a 1-texel grid (+-0.5 texel == +-0.35 px on a 44 px glyph), which is
 	// what makes large SDF text look ragged next to an outline-based atlas.
-	constexpr int kRasterScale = 4;
+	// 3x leaves +-0.17 texel (+-0.12 px) and costs 1.2 ms per CJK glyph instead
+	// of 2.1 ms at 4x (measured 264^2 vs 352^2 EDT), which matters for the
+	// first-time burst when a new panel appears.
+	constexpr int kRasterScale = 3;
 
 }
 

@@ -245,6 +245,7 @@ void saveIni()
 		"hd_text_baseline=%.3f\n"
 		"hd_text_stroke=%.3f\n"
 		"hd_text_bold=%.3f\n"
+		"hd_text_ascii_bold=%.3f\n"
 		"hd_text_solidity=%.3f\n"
 		"hd_text_center=%.3f\n"
 		"hd_text_sharpness=%.3f\n"
@@ -288,6 +289,7 @@ void saveIni()
 		App.hd_text.baseline.value,
 		App.hd_text.stroke.value,
 		App.hd_text.bold.value,
+		App.hd_text.ascii_bold.value,
 		App.hd_text.solidity.value,
 		App.hd_text.center.value,
 		App.hd_text.sharpness.value,
@@ -423,6 +425,7 @@ void loadIni()
 		App.hd_text.baseline.value = getFloat("Feature", "hd_text_baseline", App.hd_text.baseline);
 		App.hd_text.stroke.value = getFloat("Feature", "hd_text_stroke", App.hd_text.stroke);
 		App.hd_text.bold.value = getFloat("Feature", "hd_text_bold", App.hd_text.bold);
+		App.hd_text.ascii_bold.value = getFloat("Feature", "hd_text_ascii_bold", App.hd_text.ascii_bold);
 		App.hd_text.solidity.value = getFloat("Feature", "hd_text_solidity", App.hd_text.solidity);
 		App.hd_text.center.value = getFloat("Feature", "hd_text_center", App.hd_text.center);
 		App.hd_text.sharpness.value = getFloat("Feature", "hd_text_sharpness", App.hd_text.sharpness);

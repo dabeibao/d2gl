@@ -29,7 +29,12 @@ PageLoadPool& PageLoadPool::instance()
 
 PageLoadPool::PageLoadPool()
 {
-	int num_workers = 4;
+	// Glyph rasterization runs here (SDF: ~1 ms per glyph). Scale with the CPU
+	// but leave headroom for the game/render threads: a burst of new glyphs is
+	// latency-bound, and starving the game thread shows up as stutter.
+	const int hw = (int)std::thread::hardware_concurrency();
+	int num_workers = hw > 0 ? hw / 2 : 4;
+	num_workers = num_workers < 4 ? 4 : (num_workers > 8 ? 8 : num_workers);
 	for (int i = 0; i < num_workers; i++)
 		m_threads.emplace_back(&PageLoadPool::worker, this);
 }
