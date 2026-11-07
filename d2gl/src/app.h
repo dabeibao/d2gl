@@ -152,14 +152,16 @@ struct D2GLApp {
 		Range<float> scale = { 100.0f, 50.0f, 200.0f };      // 字号 (%)
 		Range<float> char_width = { 100.0f, 50.0f, 200.0f }; // 字宽 (%)
 		Range<float> line_height = { 100.0f, 50.0f, 300.0f }; // 行高 (%)
-		Range<float> letter_spacing = { 0.0f, -0.2f, 0.5f };  // 字距 (em)
+		Range<float> letter_spacing = { 0.0f, -0.1f, 0.5f };  // 字距 (em)
 		Range<float> baseline = { 0.0f, -0.6f, 0.6f };        // 基线 (em)
 		Range<float> stroke = { 1.2f, 0.5f, 2.0f };           // 笔画增强
-		Range<float> bold = { 0.0f, 0.0f, 4.0f };             // 加粗 (px)
-		Range<float> solidity = { 1.004f, 0.5f, 2.0f };       // 实心度
+		Range<float> bold = { 0.0f, 0.0f, 2.0f };             // 加粗 (px)
+		Range<float> solidity = { 1.0f, 0.5f, 2.0f };         // 实心度
 		Range<float> center = { 0.10f, 0.0f, 1.0f };          // 中心提亮
-		Range<float> sharpness = { 1.0f, 0.5f, 2.0f };        // 边缘锐化
-		Range<float> border = { 1.0f, 0.5f, 3.0f };           // 描边宽度
+		// 1.0 == a one-physical-pixel edge ramp (see mod.glsl); below ~0.6 the
+		// transition is sub-pixel and starts to shimmer.
+		Range<float> sharpness = { 1.0f, 0.5f, 1.6f };        // 边缘锐化
+		Range<float> border = { 1.0f, 0.0f, 2.0f };           // 描边宽度 (0 = 不描边)
 		Range<float> shadow_offset = { 1.5f, 0.0f, 4.0f };    // 阴影偏移 (32px-em units)
 		bool snap = true;                                     // 像素对齐
 		Select<int> render_mode = { 0, { { "自然 (Natural)", 0 }, { "GDI (Hinted)", 1 } } };
@@ -167,6 +169,11 @@ struct D2GLApp {
 		// pre-generated MSDF atlas assets.
 		std::string font_file;
 		int font_index = 0;
+		// Optional second face used for the ASCII range (U+0000..U+00FF); the
+		// main font keeps everything above it (CJK etc.). Empty = one face for
+		// both ranges.
+		std::string font_file_ascii;
+		int font_index_ascii = 0;
 	} hd_text;
 
 	struct {

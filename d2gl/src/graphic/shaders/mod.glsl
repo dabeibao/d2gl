@@ -101,31 +101,54 @@ void main()
 			if (v_TexIds.y == 1) {
 				// Runtime SDF glyph (DirectWrite): 0.5 == edge, +-6px range at a
 				// 32px em. extra.x is the font pixel size, extra.y the weight.
+				//
+				// The overlay draws straight to the window while u_MVP is an
+				// ortho of the *game* resolution, so every game pixel here is
+				// u_Scale physical pixels wide. Distances are computed in game
+				// pixels, which would turn the 1px edge ramp into u_Scale
+				// physical pixels (blurry on a stretched window). Normalizing
+				// with the screen-space derivative keeps the transition exactly
+				// one physical pixel and also covers non-uniform stretches
+				// (char width, aspect stretch). At scale 1 this equals the old
+				// +-0.5 ramp.
 				float sdf = texture(u_FontTexture, vec3(v_TexCoord, v_TexIds.x)).r;
+				float range = 6.0 * (v_Extra.x / 32.0);
+				float dist0 = (sdf * 2.0 - 1.0) * range;
 				if (v_Flags.y > 0u) {
 					float mlt = v_Flags.y == 1u ? 1.0 : 0.5;
-					// Sample down-right for the drop shadow; 4 texels == one
-					// 32px-em unit at the 128px SDF resolution. The cell padding
-					// keeps this inside the glyph's own atlas slot.
-					vec2 shadow_offset = vec2(4.0 / 1024.0) * u_FontShadowOffset;
+					// Sample down-right for the drop shadow; 2 texels == one
+					// 32px-em unit at the 64px SDF raster (SdfFont::kEmSize;
+					// it was 4 texels at 128px). The cell padding keeps this
+					// inside the glyph's own atlas slot.
+					vec2 shadow_offset = vec2(2.0 / 1024.0) * u_FontShadowOffset;
 					float shadow = texture(u_FontTexture, vec3(v_TexCoord - shadow_offset, v_TexIds.x)).r;
 					FragColor = vec4((v_Color1.r + v_Color1.g + v_Color1.b) < 0.1 ? 0.8 : 0.0);
-					FragColor.a = smoothstep(0.42, 0.58, shadow) * mlt * v_Extra.x;
+					// Shadows stay a bit softer than the glyphs (1.5px ramp).
+					float dist_shadow = (shadow * 2.0 - 1.0) * range;
+					float ramp_shadow = max(fwidth(dist_shadow), 1e-4);
+					FragColor.a = clamp(dist_shadow / (1.5 * ramp_shadow) + 0.5, 0.0, 1.0) * mlt * v_Extra.x;
 				} else {
-					// extra.y is an absolute pixel dilation (stroke + bold).
-					float dist = (sdf * 2.0 - 1.0) * 6.0 * (v_Extra.x / 32.0) * max(u_FontSharp, 0.1) + v_Extra.y;
+					// extra.y is an absolute pixel dilation (stroke + bold), in
+					// game pixels like the distance itself.
+					float sharp = max(u_FontSharp, 0.1);
+					float dist = dist0 * sharp + v_Extra.y;
+					// Game pixels per physical pixel, scaled by the sharpness so
+					// the knob keeps working (1.0 == one physical pixel).
+					float ramp = max(fwidth(dist0), 1e-4) * sharp;
 					float solid = max(u_FontSolid, 0.01);
 					// Center brightening: deep-inside pixels mix slightly toward white
 					// so thin/small SDF text reads as bright as the MSDF path.
 					float center = clamp(dist * 0.75, 0.0, 1.0) * u_FontCenter;
 					vec3 fill = mix(v_Color1.rgb, vec3(1.0), center);
-					if (v_Flags.w == 1u) {
+					// Border width 0 means "no outline": skip the color2 mix so the
+					// edge does not pick up a tinted fringe.
+					if (v_Flags.w == 1u && u_FontBorder > 0.0) {
 						float border = max(0.75, v_Extra.x * 0.04) * u_FontBorder;
-						float inner = pow(clamp(dist + 0.5, 0.0, 1.0), 1.0 / solid);
-						float outer = pow(clamp(dist + border + 0.5, 0.0, 1.0), 1.0 / solid);
+						float inner = pow(clamp(dist / ramp + 0.5, 0.0, 1.0), 1.0 / solid);
+						float outer = pow(clamp((dist + border) / ramp + 0.5, 0.0, 1.0), 1.0 / solid);
 						FragColor = vec4(mix(v_Color2.rgb, fill, inner), v_Color1.a * outer);
 					} else {
-						FragColor = vec4(fill, v_Color1.a * pow(clamp(dist + 0.5, 0.0, 1.0), 1.0 / solid));
+						FragColor = vec4(fill, v_Color1.a * pow(clamp(dist / ramp + 0.5, 0.0, 1.0), 1.0 / solid));
 					}
 				}
 			} else {

@@ -96,12 +96,22 @@ GlyphSet::GlyphSet(Texture* texture, const std::string& name, GlyphSet* symbol_s
 	}
 }
 
-GlyphSet::GlyphSet(Texture* texture, const std::string& name, const std::string& font_path, int face_index, int render_mode)
+GlyphSet::GlyphSet(Texture* texture, const std::string& name, const std::string& font_path, int face_index, int render_mode,
+	const std::string& ascii_path, int ascii_index)
 	: m_name(name)
 	, m_texture(texture)
 	, m_sdf(std::make_unique<SdfFont>())
 {
 	m_sdf->load(font_path, face_index, render_mode);
+
+	// Optional ASCII face. Same path as the main font means "single face", and
+	// a face that fails to load is simply dropped so the main font covers the
+	// whole range (missing characters fall back to '?' as usual).
+	if (!ascii_path.empty() && (ascii_path != font_path || ascii_index != face_index)) {
+		auto ascii = std::make_unique<SdfFont>();
+		if (ascii->load(ascii_path, ascii_index, render_mode))
+			m_sdf_ascii = std::move(ascii);
+	}
 }
 
 GlyphSet::~GlyphSet()
@@ -262,7 +272,7 @@ Glyph* GlyphSet::getSdfGlyph(wchar_t c)
 		m_pending_tasks++;
 		PageLoadPool::instance().submit([this, c]() {
 			SdfGlyphBitmap bitmap;
-			if (m_sdf->rasterize(c, bitmap)) {
+			if (pickSdf(c)->rasterize(c, bitmap)) {
 				std::lock_guard<std::mutex> lock(m_mutex);
 				CompletedSdfGlyph completed;
 				completed.cc = c;
@@ -292,7 +302,7 @@ Glyph* GlyphSet::getSdfGlyph(wchar_t c)
 
 	// Metrics come from DirectWrite synchronously so text width and wrapping
 	// stay correct while the SDF bitmap is still being generated on a worker.
-	const SdfGlyphMetrics* metrics = m_sdf->getMetrics(c);
+	const SdfGlyphMetrics* metrics = pickSdf(c)->getMetrics(c);
 	Glyph glyph = {};
 	glyph.tex_id = 0xFFFF;
 
@@ -369,6 +379,10 @@ void GlyphSet::pollCompletions(CommandBuffer* cmd_buf)
 		std::vector<CompletedSdfGlyph> glyphs;
 		glyphs.swap(m_sdf_completed);
 
+		// Atlas grid for the current cell size (setAtlasSize keeps
+		// s_index_per_row == s_texture_size / s_atlas_size).
+		const uint32_t slots_per_layer = (uint32_t)(s_index_per_row * s_index_per_row);
+
 		for (auto& comp : glyphs) {
 			auto it = m_glyphes.find(comp.cc);
 			if (it == m_glyphes.end() || it->second.tex_id != 0xFFFF) {
@@ -383,8 +397,8 @@ void GlyphSet::pollCompletions(CommandBuffer* cmd_buf)
 				continue;
 			}
 
-			const uint32_t layer = slot / kSlotsPerLayer;
-			const uint32_t index = slot % kSlotsPerLayer;
+			const uint32_t layer = slot / slots_per_layer;
+			const uint32_t index = slot % slots_per_layer;
 			if (layer >= m_texture->getLayerCount()) {
 				error_log("[HDText] SDF atlas layer out of range, glyph U+%04X dropped", (uint32_t)comp.cc);
 				free(comp.bitmap.pixels);

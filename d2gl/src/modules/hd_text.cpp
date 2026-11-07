@@ -166,8 +166,12 @@ void HDText::makeFont(const std::vector<std::string>& info, GlyphSet* set)
 
 bool HDText::setupRuntimeFonts()
 {
-	// 256px cells -> 16 glyph slots per 1024 layer; 128 layers = 2048 glyphs.
-	constexpr uint32_t sdf_layers = 128;
+	// 128px cells -> 64 glyph slots per 1024px layer; 2048 glyphs -> 32 layers.
+	// Derived from the cell size so the atlas geometry cannot drift apart from
+	// SdfFont::kCellSize. 1024 == GlyphSet::s_texture_size (not constexpr, so it
+	// cannot be used in a constant expression here), 2048 == GlyphSet::kMaxGlyphs.
+	constexpr int sdf_slots = 1024 / SdfFont::kCellSize;
+	constexpr uint32_t sdf_layers = 2048 / (uint32_t)(sdf_slots * sdf_slots);
 	GlyphSet::setAtlasSize(SdfFont::kCellSize);
 
 	TextureCreateInfo ci;
@@ -190,6 +194,13 @@ bool HDText::setupRuntimeFonts()
 		fallback_index = m_font_map.begin()->second.second;
 	}
 
+	// Optional second face for the ASCII range (0-255). It is global: every
+	// glyph set gets it, the per-set/mapped font keeps CJK and above.
+	const std::string ascii_path = (App.hd_text.font_file_ascii == kMsdfFontMarker)
+		? std::string()
+		: App.hd_text.font_file_ascii;
+	const int ascii_index = App.hd_text.font_index_ascii;
+
 	std::unordered_map<std::string, GlyphSet*> new_sets;
 	for (auto& info : m_font_infos) {
 		const auto& name = info[1];
@@ -204,10 +215,15 @@ bool HDText::setupRuntimeFonts()
 		if (path.empty())
 			continue;
 
-		auto set = new GlyphSet(texture.get(), name, path, index, App.hd_text.render_mode.selected);
+		auto set = new GlyphSet(texture.get(), name, path, index, App.hd_text.render_mode.selected, ascii_path, ascii_index);
 		if (set->isSdfLoaded()) {
 			new_sets[name] = set;
-			trace_log("[HDText] SDF set '%s' -> %s", name.c_str(), path.c_str());
+			// trace_log expands to a block, so the branches need braces.
+			if (!ascii_path.empty()) {
+				trace_log("[HDText] SDF set '%s' -> %s (ASCII face: %s)", name.c_str(), path.c_str(), ascii_path.c_str());
+			} else {
+				trace_log("[HDText] SDF set '%s' -> %s", name.c_str(), path.c_str());
+			}
 		} else {
 			delete set;
 		}

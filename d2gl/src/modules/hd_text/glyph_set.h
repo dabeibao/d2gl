@@ -70,13 +70,18 @@ class GlyphSet {
 	std::vector<CompletedPage> m_completed;
 	std::atomic<int> m_pending_tasks{ 0 };
 
-	// Runtime SDF mode (DirectWrite). Glyphs live in a fixed 128px-em atlas
+	// Runtime SDF mode (DirectWrite). Glyphs live in a fixed 64px-em atlas
 	// (2048 slots) and are evicted LRU when full. Nodes are never erased, only
 	// invalidated: the game thread can still hold a Glyph*.
 	static constexpr uint32_t kMaxGlyphs = 2048;
-	static constexpr uint32_t kSlotsPerLayer = 16; // (1024/256)^2
+	// Slots per layer are not hardcoded: they follow the atlas cell,
+	// (s_texture_size / s_atlas_size)^2 == s_index_per_row^2.
+	// Codepoints below this use the optional ASCII face; everything else keeps
+	// the main face. U+0100 and above is CJK / symbols in D2's wchar text.
+	static constexpr uint32_t kAsciiFaceLimit = 0x100;
 
 	std::unique_ptr<SdfFont> m_sdf;
+	std::unique_ptr<SdfFont> m_sdf_ascii;
 	std::vector<CompletedSdfGlyph> m_sdf_completed;
 	std::unordered_map<wchar_t, uint8_t> m_sdf_queued;
 	std::unordered_map<wchar_t, uint32_t> m_sdf_slot;
@@ -85,10 +90,15 @@ class GlyphSet {
 
 	Glyph* getSdfGlyph(wchar_t c);
 	uint32_t allocSdfSlot(wchar_t c);
+	// Face selection per codepoint. The primary face is mandatory; the ASCII
+	// face is optional and immutable after construction, so this is safe to
+	// call from the raster worker thread.
+	SdfFont* pickSdf(wchar_t c) { return (m_sdf_ascii && (uint32_t)c < kAsciiFaceLimit) ? m_sdf_ascii.get() : m_sdf.get(); }
 
 public:
 	GlyphSet(Texture* texture, const std::string& name, GlyphSet* symbol_set = nullptr);
-	GlyphSet(Texture* texture, const std::string& name, const std::string& font_path, int face_index, int render_mode = 0);
+	GlyphSet(Texture* texture, const std::string& name, const std::string& font_path, int face_index, int render_mode = 0,
+		const std::string& ascii_path = std::string(), int ascii_index = 0);
 	~GlyphSet();
 
 	const Glyph* getGlyph(wchar_t c);

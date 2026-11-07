@@ -31,8 +31,11 @@ namespace d2gl {
 // Metrics are expressed in the same "32px em" units the MSDF atlas used:
 // 1 unit == 1 pixel at a 32px em. Font::drawChar multiplies them by
 // m_font_size / 32, so layout and scaling stay identical to the old path.
-// The distance field itself is rasterized at 2x (64px em, 128px cells) to
-// keep corners/stems sharp; only the stored metrics are halved.
+// The distance field itself is rasterized at 2x (64px em, 128px cells).
+// Half of the previous 128px em: at the usual window/game ratio (~2x) one
+// atlas texel still covers ~0.65 physical pixels, so the mask staircase and
+// the 8-bit distance step both stay below a pixel, while the atlas drops from
+// 64KB to 16KB per glyph.
 struct SdfGlyphMetrics {
 	uint16_t index = 0;
 	float advance = 0.0f;
@@ -54,11 +57,11 @@ struct SdfGlyphBitmap {
 // converted to a signed distance field and uploaded into the font texture array.
 class SdfFont {
 public:
-	static constexpr int kEmSize = 128;       // rasterization em (4x the 32-unit base)
-	static constexpr int kUnitScale = 4;      // 128px em -> 32-unit metrics divisor
+	static constexpr int kEmSize = 64;        // rasterization em (2x the 32-unit base)
+	static constexpr int kUnitScale = 2;      // 64px em -> 32-unit metrics divisor
 	static constexpr int kSpread = 6;         // signed distance range in 32-units
-	static constexpr int kSpreadPx = kSpread * kUnitScale; // same range in raster px
-	static constexpr int kCellSize = 256;     // atlas slot size at 128px em
+	static constexpr int kSpreadPx = kSpread * kUnitScale; // same range in raster px (12)
+	static constexpr int kCellSize = 128;     // atlas slot size at 64px em
 	static constexpr int kCellPad = kSpreadPx; // blank margin around the glyph bbox
 
 	SdfFont() = default;

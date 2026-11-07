@@ -235,6 +235,10 @@ void saveIni()
 		"; Leave empty to use the MSDF atlas assets.\n"
 		"hd_text_font=%s\n"
 		"hd_text_font_index=%d\n"
+		"; Second runtime SDF face for ASCII (0-255); hd_text_font keeps CJK and\n"
+		"; everything above 0xFF. Leave empty for a single font.\n"
+		"hd_text_font_ascii=%s\n"
+		"hd_text_font_index_ascii=%d\n"
 		"hd_text_char_width=%.3f\n"
 		"hd_text_line_height=%.3f\n"
 		"hd_text_letter_spacing=%.3f\n"
@@ -276,6 +280,8 @@ void saveIni()
 		App.hd_text.scale.value,
 		App.hd_text.font_file.c_str(),
 		App.hd_text.font_index,
+		App.hd_text.font_file_ascii.c_str(),
+		App.hd_text.font_index_ascii,
 		App.hd_text.char_width.value,
 		App.hd_text.line_height.value,
 		App.hd_text.letter_spacing.value,
@@ -405,6 +411,11 @@ void loadIni()
 		if (getValue("Feature", "hd_text_font", font_path, sizeof(font_path)))
 			App.hd_text.font_file = font_path;
 		App.hd_text.font_index = getInt("Feature", "hd_text_font_index", App.hd_text.font_index, 0, 64);
+
+		char ascii_font_path[512] = "";
+		if (getValue("Feature", "hd_text_font_ascii", ascii_font_path, sizeof(ascii_font_path)))
+			App.hd_text.font_file_ascii = ascii_font_path;
+		App.hd_text.font_index_ascii = getInt("Feature", "hd_text_font_index_ascii", App.hd_text.font_index_ascii, 0, 64);
 
 		App.hd_text.char_width.value = getFloat("Feature", "hd_text_char_width", App.hd_text.char_width);
 		App.hd_text.line_height.value = getFloat("Feature", "hd_text_line_height", App.hd_text.line_height);

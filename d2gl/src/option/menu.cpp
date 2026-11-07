@@ -83,15 +83,17 @@ static float getScale(HWND hwnd) {
 
 // Scans data\assets\fonts for selectable runtime SDF fonts. Index 0 follows
 // fonts.txt (or MSDF if it is absent); index 1 forces the built-in MSDF atlas.
-static void refreshFontList(std::vector<std::string>& paths, Select<int>& select)
+static void refreshFontList(std::vector<std::string>& paths, Select<int>& select, const std::string& current, bool ascii_only = false)
 {
 	paths.clear();
 	select.items.clear();
 
 	paths.emplace_back();
-	select.items.push_back({ "默认 (fonts.txt / 自动)", 0 });
-	paths.emplace_back(kMsdfFontMarker);
-	select.items.push_back({ "内置 MSDF 图集", 1 });
+	select.items.push_back({ ascii_only ? "跟随主字体" : "默认 (fonts.txt / 自动)", 0 });
+	if (!ascii_only) {
+		paths.emplace_back(kMsdfFontMarker);
+		select.items.push_back({ "内置 MSDF 图集", 1 });
+	}
 
 	std::vector<std::pair<std::string, std::string>> files;
 	std::error_code ec;
@@ -115,18 +117,18 @@ static void refreshFontList(std::vector<std::string>& paths, Select<int>& select
 	}
 
 	select.selected = 0;
-	if (!App.hd_text.font_file.empty()) {
+	if (!current.empty()) {
 		bool found = false;
 		for (size_t i = 1; i < paths.size(); i++) {
-			if (_stricmp(paths[i].c_str(), App.hd_text.font_file.c_str()) == 0) {
+			if (_stricmp(paths[i].c_str(), current.c_str()) == 0) {
 				select.selected = (int)i;
 				found = true;
 				break;
 			}
 		}
 		if (!found) {
-			select.items.push_back({ App.hd_text.font_file, (int)paths.size() });
-			paths.push_back(App.hd_text.font_file);
+			select.items.push_back({ current, (int)paths.size() });
+			paths.push_back(current);
 			select.selected = (int)paths.size() - 1;
 		}
 	}
@@ -549,11 +551,16 @@ void Menu::draw()
 
 			static std::vector<std::string> font_paths;
 			static Select<int> font_files;
+			static std::vector<std::string> ascii_font_paths;
+			static Select<int> ascii_font_files;
 			static bool font_list_ready = false;
 			static int opt_font_file = 0;
+			static int opt_ascii_font = 0;
 			if (!font_list_ready) {
-				refreshFontList(font_paths, font_files);
+				refreshFontList(font_paths, font_files, App.hd_text.font_file);
+				refreshFontList(ascii_font_paths, ascii_font_files, App.hd_text.font_file_ascii, true);
 				opt_font_file = font_files.selected;
+				opt_ascii_font = ascii_font_files.selected;
 				font_list_ready = true;
 			}
 
@@ -574,11 +581,20 @@ void Menu::draw()
 			}
 			ImGui::SameLine();
 			if (drawButton("刷新列表", { 96.0f * m_scale, 29.0f * m_scale }, 15)) {
-				refreshFontList(font_paths, font_files);
+				refreshFontList(font_paths, font_files, App.hd_text.font_file);
+				refreshFontList(ascii_font_paths, ascii_font_files, App.hd_text.font_file_ascii, true);
 				opt_font_file = font_files.selected;
+				opt_ascii_font = ascii_font_files.selected;
 			}
 			if (font_restart_pending)
 				drawDescription("字体切换失败, 重启游戏后生效", m_colors[Color::Orange], 12);
+
+			if (drawCombo("ASCII 字体", &ascii_font_files, "0-255 用这个字体, 其余 (中文等) 走上面的字体", false, &opt_ascii_font, 17)) {
+				App.hd_text.font_file_ascii = ascii_font_files.selected < (int)ascii_font_paths.size() ? ascii_font_paths[ascii_font_files.selected] : std::string();
+				saveString("Feature", "hd_text_font_ascii", App.hd_text.font_file_ascii);
+				font_changed = true;
+				font_restart_pending = !modules::HDText::Instance().reloadFonts();
+			}
 
 			drawCombo_m("渲染方式", App.hd_text.render_mode, "", false, 17, hd_render_mode)
 			{
@@ -617,7 +633,7 @@ void Menu::draw()
 				font_changed = true;
 			drawSlider_m(float, "边缘锐化", App.hd_text.sharpness, "%.2f", "SDF 边缘过渡宽度 (越大越锐)", hd_text_sharpness)
 				font_changed = true;
-			drawSlider_m(float, "描边宽度", App.hd_text.border, "%.2f", "仅带边框字体槽 (2/3/7/18)", hd_text_border)
+			drawSlider_m(float, "描边宽度", App.hd_text.border, "%.2f", "仅带边框字体槽 (2/3/7/18), 0 = 不描边", hd_text_border)
 				font_changed = true;
 			drawSlider_m(float, "阴影偏移", App.hd_text.shadow_offset, "%.2f", "阴影距离 (32px-em 单位)", hd_text_shadow_offset)
 				font_changed = true;

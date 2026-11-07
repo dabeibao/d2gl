@@ -165,9 +165,13 @@ float Font::drawChar(wchar_t c, glm::vec2 pos, uint32_t color)
 		}
 
 		// Pixel snapping keeps the SDF glyphs aligned with the output pixels.
+		// Positions are in game pixels and the window scale is applied later in
+		// the vertex shader, so round in *physical* pixels: rounding to a game
+		// pixel only lands on the device grid when window/game is an integer.
 		if (m_glyph_set->isSdf() && App.hd_text.snap) {
-			object_pos.x = floorf(object_pos.x + 0.5f);
-			object_pos.y = floorf(object_pos.y + 0.5f);
+			const glm::vec2 s = App.viewport.scale;
+			object_pos.x = s.x > 0.0f ? floorf(object_pos.x * s.x + 0.5f) / s.x : object_pos.x;
+			object_pos.y = s.y > 0.0f ? floorf(object_pos.y * s.y + 0.5f) / s.y : object_pos.y;
 		}
 
 		m_object->setSize({ glyph->size.x * m_scale * char_width, glyph->size.y * m_scale });
