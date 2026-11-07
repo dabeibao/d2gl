@@ -70,10 +70,9 @@ class GlyphSet {
 	std::vector<CompletedPage> m_completed;
 	std::atomic<int> m_pending_tasks{ 0 };
 
-	// Runtime SDF mode (DirectWrite). Glyphs live in a fixed 64px-em atlas
-	// (2048 slots) and are evicted LRU when full. Nodes are never erased, only
-	// invalidated: the game thread can still hold a Glyph*.
-	static constexpr uint32_t kMaxGlyphs = 2048;
+	// Runtime SDF mode (DirectWrite). Glyphs live in a fixed 64px-em atlas and
+	// are evicted LRU when full. Nodes are never erased, only invalidated: the
+	// game thread can still hold a Glyph*.
 	// Slots per layer are not hardcoded: they follow the atlas cell,
 	// (s_texture_size / s_atlas_size)^2 == s_index_per_row^2.
 	// Codepoints below this use the optional ASCII face; everything else keeps
@@ -85,16 +84,26 @@ class GlyphSet {
 	std::vector<CompletedSdfGlyph> m_sdf_completed;
 	std::unordered_map<wchar_t, uint8_t> m_sdf_queued;
 	std::unordered_map<wchar_t, uint32_t> m_sdf_slot;
-	std::unordered_map<wchar_t, uint32_t> m_sdf_use;
+	// Slot -> owner char (0 == free) and slot -> last frame it was used. Flat
+	// arrays keep the LRU scan cache friendly: scanning the hash maps cost
+	// ~200us per eviction at 4096 entries, i.e. milliseconds for a burst of new
+	// glyphs once the cache is full.
+	std::vector<wchar_t> m_sdf_slot_char;
+	std::vector<uint32_t> m_sdf_slot_use;
 	uint32_t m_sdf_next_slot = 0;
 
 	Glyph* getSdfGlyph(wchar_t c);
 	uint32_t allocSdfSlot(wchar_t c);
+	void touchSdfSlot(wchar_t c, uint32_t frame);
 	// Face selection per codepoint. The primary face is mandatory; the ASCII
 	// face is optional and immutable after construction, so this is safe to
 	// call from the raster worker thread.
 	SdfFont* pickSdf(wchar_t c) { return (m_sdf_ascii && (uint32_t)c < kAsciiFaceLimit) ? m_sdf_ascii.get() : m_sdf.get(); }
 public:
+	// Glyph cache budget (LRU). 4096 slots x 16 KiB = 64 MiB worst case; the
+	// texture layer count is derived from it (see HDText::setupRuntimeFonts).
+	static constexpr uint32_t kMaxGlyphs = 4096;
+
 	GlyphSet(Texture* texture, const std::string& name, GlyphSet* symbol_set = nullptr);
 	GlyphSet(Texture* texture, const std::string& name, const std::string& font_path, int face_index, int render_mode = 0,
 		const std::string& ascii_path = std::string(), int ascii_index = 0);

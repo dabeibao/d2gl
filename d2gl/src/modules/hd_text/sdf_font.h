@@ -73,8 +73,10 @@ public:
 	inline bool isLoaded() const { return m_face != nullptr; }
 
 	// Cheap and cached; called from the layout thread on first use of a char so
-	// text width/line wrapping stay valid before the texture is ready.
-	const SdfGlyphMetrics* getMetrics(wchar_t c);
+	// text width/line wrapping stay valid before the texture is ready. Only the
+	// advance (design metrics) is resolved here: the ink box comes back with the
+	// rasterized bitmap, so the game thread never runs a layout analysis.
+	const SdfGlyphMetrics* getAdvance(wchar_t c);
 
 	// Called from a worker thread. Returns false for empty glyphs.
 	bool rasterize(wchar_t c, SdfGlyphBitmap& out);
@@ -83,12 +85,14 @@ private:
 	bool ensureFactory();
 	bool loadFile(const std::wstring& path, int face_index);
 	bool loadFamily(const std::wstring& family);
-	bool makeMetrics(uint16_t glyph_index, float advance, int left, int top, int ink_w, int ink_h, SdfGlyphMetrics& out);
-	const SdfGlyphMetrics* metricsLocked(wchar_t c);
-	bool rasterizeLocked(wchar_t c, SdfGlyphBitmap& out);
-	uint16_t glyphIndexLocked(wchar_t c);
+	bool rasterizeGlyph(wchar_t c, SdfGlyphBitmap& out);
+	uint16_t glyphIndex(wchar_t c);
 
-	std::mutex m_mutex;
+	// Guards the metric cache only. The rasterizer must not take it: a worker
+	// glyph takes ~1 ms, and sharing the lock would block the game thread's
+	// getAdvance() for that whole time. Everything else in here is immutable
+	// after load() and DWrite faces are free-threaded.
+	mutable std::mutex m_metrics_mutex;
 	IDWriteFactory* m_factory = nullptr;
 	IDWriteFontFace* m_face = nullptr;
 	float m_units_per_em = 2048.0f;

@@ -102,6 +102,8 @@ GlyphSet::GlyphSet(Texture* texture, const std::string& name, const std::string&
 	, m_texture(texture)
 	, m_sdf(std::make_unique<SdfFont>())
 {
+	m_sdf_slot_char.assign(kMaxGlyphs, 0);
+	m_sdf_slot_use.assign(kMaxGlyphs, 0);
 	m_sdf->load(font_path, face_index, render_mode);
 
 	// Optional ASCII face. Same path as the main font means "single face", and
@@ -229,35 +231,45 @@ static uint32_t currentFrame()
 
 uint32_t GlyphSet::allocSdfSlot(wchar_t c)
 {
-	(void)c;
-	if (m_sdf_next_slot < kMaxGlyphs)
-		return m_sdf_next_slot++;
+	if (m_sdf_next_slot < kMaxGlyphs) {
+		const uint32_t slot = m_sdf_next_slot++;
+		m_sdf_slot_char[slot] = c;
+		m_sdf_slot_use[slot] = currentFrame();
+		return slot;
+	}
 
 	// Cache full: evict the least recently used glyph. Its node is kept but
-	// invalidated so a Glyph* held by the game thread stays valid.
-	wchar_t victim = 0;
+	// invalidated so a Glyph* held by the game thread stays valid. The scan runs
+	// over flat arrays (slot -> char / frame) instead of the hash maps.
+	uint32_t victim_slot = UINT32_MAX;
 	uint32_t victim_tick = UINT32_MAX;
-	bool found = false;
-	for (const auto& [ch, slot] : m_sdf_slot) {
-		const auto it = m_sdf_use.find(ch);
-		const uint32_t tick = it != m_sdf_use.end() ? it->second : 0;
-		if (!found || tick < victim_tick) {
-			found = true;
-			victim = ch;
-			victim_tick = tick;
+	for (uint32_t slot = 0; slot < kMaxGlyphs; slot++) {
+		if (!m_sdf_slot_char[slot])
+			continue;
+		if (m_sdf_slot_use[slot] < victim_tick) {
+			victim_tick = m_sdf_slot_use[slot];
+			victim_slot = slot;
 		}
 	}
-	if (!found)
+	if (victim_slot == UINT32_MAX)
 		return UINT32_MAX;
 
-	const uint32_t slot = m_sdf_slot[victim];
+	const wchar_t victim = m_sdf_slot_char[victim_slot];
+	m_sdf_slot_char[victim_slot] = c;
+	m_sdf_slot_use[victim_slot] = currentFrame();
 	m_sdf_slot.erase(victim);
-	m_sdf_use.erase(victim);
 	m_sdf_queued.erase(victim);
 	const auto glyph_it = m_glyphes.find(victim);
 	if (glyph_it != m_glyphes.end())
 		glyph_it->second.tex_id = 0xFFFF;
-	return slot;
+	return victim_slot;
+}
+
+void GlyphSet::touchSdfSlot(wchar_t c, uint32_t frame)
+{
+	const auto it = m_sdf_slot.find(c);
+	if (it != m_sdf_slot.end())
+		m_sdf_slot_use[it->second] = frame;
 }
 
 Glyph* GlyphSet::getSdfGlyph(wchar_t c)
@@ -287,9 +299,10 @@ Glyph* GlyphSet::getSdfGlyph(wchar_t c)
 	auto it = m_glyphes.find(c);
 	if (it != m_glyphes.end()) {
 		Glyph& glyph = it->second;
-		m_sdf_use[c] = frame;
-		// Evicted by LRU: rasterize it again.
-		if (glyph.tex_id == 0xFFFF && glyph.size.x > 0.0f && glyph.size.y > 0.0f)
+		touchSdfSlot(c, frame);
+		// Evicted by LRU: rasterize it again. The ink box (size) is only filled
+		// once the bitmap arrives, so use the advance as the "known glyph" flag.
+		if (glyph.tex_id == 0xFFFF && c != L' ' && glyph.advance > 0.0f)
 			queue_raster();
 		return &glyph;
 	}
@@ -300,9 +313,9 @@ Glyph* GlyphSet::getSdfGlyph(wchar_t c)
 		return &m_glyphes.emplace(c, dummy).first->second;
 	}
 
-	// Metrics come from DirectWrite synchronously so text width and wrapping
-	// stay correct while the SDF bitmap is still being generated on a worker.
-	const SdfGlyphMetrics* metrics = pickSdf(c)->getMetrics(c);
+	// Advance only: the ink box arrives with the bitmap (see pollCompletions), so
+	// a new string never blocks the game thread on a DWrite layout analysis.
+	const SdfGlyphMetrics* metrics = pickSdf(c)->getAdvance(c);
 	Glyph glyph = {};
 	glyph.tex_id = 0xFFFF;
 
@@ -310,16 +323,12 @@ Glyph* GlyphSet::getSdfGlyph(wchar_t c)
 		return &m_glyphes.emplace(c, glyph).first->second;
 
 	glyph.advance = metrics->advance;
-	glyph.size = { (float)metrics->width, (float)metrics->height };
-	// D2's text origin is the baseline of the last line, so the glyph box is
-	// placed by its top bearing alone (no ascent offset).
-	glyph.offset = { metrics->left, metrics->top };
-
+	// size/offset stay empty until the bitmap is uploaded; drawChar skips the
+	// glyph while tex_id == 0xFFFF, so it is never drawn half-initialised.
 	auto& stored = m_glyphes.emplace(c, glyph).first->second;
-	m_sdf_use[c] = frame;
+	touchSdfSlot(c, frame);
 
-	const bool drawable = c != L' ' && metrics->width > 0 && metrics->height > 0;
-	if (drawable)
+	if (c != L' ')
 		queue_raster();
 
 	return &stored;
@@ -419,11 +428,14 @@ void GlyphSet::pollCompletions(CommandBuffer* cmd_buf)
 				(float)(cell_x + comp.bitmap.width) * inv_size,
 				(float)cell_y * inv_size
 			};
-			// Quad size stays in 32-em units; the bitmap itself is 2x.
+			// Quad size stays in 32-em units; the bitmap itself is at 64em.
+			// The ink box only exists now that the bitmap is ready, so the glyph
+			// offset (top bearing) is filled in here as well.
 			glyph.size = { comp.bitmap.metrics.width, comp.bitmap.metrics.height };
+			glyph.offset = { comp.bitmap.metrics.left, comp.bitmap.metrics.top };
 
 			m_sdf_slot[comp.cc] = slot;
-			m_sdf_use[comp.cc] = currentFrame();
+			m_sdf_slot_use[slot] = currentFrame();
 
 			ImageData image = { comp.bitmap.width, comp.bitmap.height, 1, comp.bitmap.pixels };
 			cmd_buf->pushFontPage(image, layer, m_texture, cell_x, cell_y);

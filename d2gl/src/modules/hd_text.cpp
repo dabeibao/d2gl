@@ -166,12 +166,12 @@ void HDText::makeFont(const std::vector<std::string>& info, GlyphSet* set)
 
 bool HDText::setupRuntimeFonts()
 {
-	// 128px cells -> 64 glyph slots per 1024px layer; 2048 glyphs -> 32 layers.
-	// Derived from the cell size so the atlas geometry cannot drift apart from
-	// SdfFont::kCellSize. 1024 == GlyphSet::s_texture_size (not constexpr, so it
-	// cannot be used in a constant expression here), 2048 == GlyphSet::kMaxGlyphs.
+	// 128px cells -> 64 glyph slots per 1024px layer; GlyphSet::kMaxGlyphs
+	// glyphs -> 64 layers (64 MiB worst case). Derived from the cell size so the
+	// atlas geometry cannot drift apart from SdfFont::kCellSize. 1024 ==
+	// GlyphSet::s_texture_size (not constexpr, so it cannot be used here).
 	constexpr int sdf_slots = 1024 / SdfFont::kCellSize;
-	constexpr uint32_t sdf_layers = 2048 / (uint32_t)(sdf_slots * sdf_slots);
+	constexpr uint32_t sdf_layers = GlyphSet::kMaxGlyphs / (uint32_t)(sdf_slots * sdf_slots);
 	GlyphSet::setAtlasSize(SdfFont::kCellSize);
 
 	TextureCreateInfo ci;

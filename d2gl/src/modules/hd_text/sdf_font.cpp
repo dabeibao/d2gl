@@ -259,7 +259,7 @@ bool SdfFont::load(const std::string& path_or_family, int face_index, int render
 	return true;
 }
 
-uint16_t SdfFont::glyphIndexLocked(wchar_t c)
+uint16_t SdfFont::glyphIndex(wchar_t c)
 {
 	uint16_t index = 0;
 	const UINT32 code = (UINT32)c;
@@ -275,115 +275,48 @@ uint16_t SdfFont::glyphIndexLocked(wchar_t c)
 	return index;
 }
 
-bool SdfFont::makeMetrics(uint16_t glyph_index, float advance, int left, int top, int ink_w, int ink_h, SdfGlyphMetrics& out)
+const SdfGlyphMetrics* SdfFont::getAdvance(wchar_t c)
 {
-	out.index = glyph_index;
-	out.advance = advance / (float)kUnitScale;
+	ensureThreadCom();
+	if (!m_face)
+		return nullptr;
+	std::lock_guard<std::mutex> lock(m_metrics_mutex);
 
-	if (ink_w <= 0 || ink_h <= 0) {
-		out.width = 0.0f;
-		out.height = 0.0f;
-		out.left = 0.0f;
-		out.top = 0.0f;
-		return true;
-	}
-
-	// Keep at least a little blank margin, but never exceed one atlas cell.
-	const int pad_x = std::min(kCellPad, std::max(0, (kCellSize - ink_w) / 2));
-	const int pad_y = std::min(kCellPad, std::max(0, (kCellSize - ink_h) / 2));
-
-	// Stored metrics are in 32-em units; the bitmap itself stays at 64px em.
-	out.width = (float)std::min(ink_w + pad_x * 2, kCellSize) / (float)kUnitScale;
-	out.height = (float)std::min(ink_h + pad_y * 2, kCellSize) / (float)kUnitScale;
-	out.left = (float)(left - pad_x) / (float)kUnitScale;
-	out.top = (float)(top - pad_y) / (float)kUnitScale;
-	return true;
-}
-
-const SdfGlyphMetrics* SdfFont::metricsLocked(wchar_t c)
-{
 	auto it = m_metrics.find(c);
 	if (it != m_metrics.end())
 		return &it->second;
 
 	SdfGlyphMetrics metrics = {};
-
-	const uint16_t index = glyphIndexLocked(c);
-	if (index == 0) {
-		// Unknown char: cache an empty glyph so we only pay the lookup once.
-		return &m_metrics.emplace(c, metrics).first->second;
+	metrics.index = glyphIndex(c);
+	if (metrics.index) {
+		// Design metrics only: no glyph-run analysis, so this stays cheap enough
+		// to run on the game thread for every character of a new string.
+		DWRITE_GLYPH_METRICS design = {};
+		if (SUCCEEDED(m_face->GetDesignGlyphMetrics(&metrics.index, 1, &design, FALSE)))
+			metrics.advance = (float)design.advanceWidth * m_scale / (float)kUnitScale;
 	}
-
-	DWRITE_GLYPH_METRICS design = {};
-	if (FAILED(m_face->GetDesignGlyphMetrics(&index, 1, &design, FALSE))) {
-		metrics.index = index;
-		return &m_metrics.emplace(c, metrics).first->second;
-	}
-
-	const float advance = (float)design.advanceWidth * m_scale;
-	metrics.index = index;
-	metrics.advance = advance;
-
-	if (c == L' ' || c == L'\t') {
-		makeMetrics(index, advance, 0, 0, 0, 0, metrics);
-		return &m_metrics.emplace(c, metrics).first->second;
-	}
-
-	DWRITE_GLYPH_RUN run = {};
-	run.fontFace = m_face;
-	run.fontEmSize = (FLOAT)kEmSize;
-	run.glyphCount = 1;
-	run.glyphIndices = &index;
-	run.glyphAdvances = &advance;
-	const DWRITE_GLYPH_OFFSET offset = { 0.0f, 0.0f };
-	run.glyphOffsets = &offset;
-	run.isSideways = FALSE;
-	run.bidiLevel = 0;
-
-	const DWRITE_MATRIX transform = { 1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f };
-	IDWriteGlyphRunAnalysis* analysis = nullptr;
-	// ALIASED_1x1 has no bounds for AA modes, so use the 3x1 ClearType texture and
-	// average its subpixels into grayscale coverage (see rasterizeLocked).
-	const DWRITE_RENDERING_MODE mode = (m_render_mode == 1) ? DWRITE_RENDERING_MODE_GDI_NATURAL : DWRITE_RENDERING_MODE_NATURAL;
-	HRESULT hr = m_factory->CreateGlyphRunAnalysis(&run, 1.0f, &transform, mode,
-		DWRITE_MEASURING_MODE_NATURAL, 0.0f, 0.0f, &analysis);
-
-	if (SUCCEEDED(hr) && analysis) {
-		RECT rect = {};
-		hr = analysis->GetAlphaTextureBounds(DWRITE_TEXTURE_CLEARTYPE_3x1, &rect);
-		analysis->Release();
-
-		if (SUCCEEDED(hr) && rect.right > rect.left && rect.bottom > rect.top) {
-			makeMetrics(index, advance, rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top, metrics);
-			return &m_metrics.emplace(c, metrics).first->second;
-		}
-	} else if (analysis) {
-		analysis->Release();
-	}
-
-	// Layout-only glyph (no ink bounds available).
-	makeMetrics(index, advance, 0, 0, 0, 0, metrics);
 	return &m_metrics.emplace(c, metrics).first->second;
 }
 
-const SdfGlyphMetrics* SdfFont::getMetrics(wchar_t c)
+bool SdfFont::rasterizeGlyph(wchar_t c, SdfGlyphBitmap& out)
 {
-	ensureThreadCom();
-	std::lock_guard<std::mutex> lock(m_mutex);
-	return metricsLocked(c);
-}
-
-bool SdfFont::rasterizeLocked(wchar_t c, SdfGlyphBitmap& out)
-{
-	const SdfGlyphMetrics* metrics = metricsLocked(c);
-	if (!metrics || metrics->index == 0 || metrics->width <= 0 || metrics->height <= 0)
+	if (!m_face)
+		return false;
+	const uint16_t index = glyphIndex(c);
+	if (index == 0)
 		return false;
 
-	const uint16_t index = metrics->index;
+	// Design metrics only; the ink box comes from the fine raster below, so the
+	// whole layout analysis happens on the worker instead of blocking the game
+	// thread once per character of a new string.
+	DWRITE_GLYPH_METRICS design = {};
+	if (FAILED(m_face->GetDesignGlyphMetrics(&index, 1, &design, FALSE)))
+		return false;
+
 	// Metrics are 32-unit values; the coverage is rasterized at kRasterScale
 	// times the stored em (see kRasterScale).
 	const int em = kEmSize * kRasterScale;
-	const float advance = metrics->advance * (float)kUnitScale * (float)kRasterScale;
+	const float advance = (float)design.advanceWidth * m_scale * (float)kRasterScale;
 
 	DWRITE_GLYPH_RUN run = {};
 	run.fontFace = m_face;
@@ -422,7 +355,7 @@ bool SdfFont::rasterizeLocked(wchar_t c, SdfGlyphBitmap& out)
 	if (FAILED(hr))
 		return false;
 
-	// Same cell geometry as makeMetrics, expressed in fine (raster) pixels.
+	// Same cell geometry as the stored 32-unit metrics, in fine raster pixels.
 	const int cell = kCellSize * kRasterScale;
 	const int pad_x = std::min(kCellPad * kRasterScale, std::max(0, (cell - ink_w) / 2));
 	const int pad_y = std::min(kCellPad * kRasterScale, std::max(0, (cell - ink_h) / 2));
@@ -479,12 +412,13 @@ bool SdfFont::rasterizeLocked(wchar_t c, SdfGlyphBitmap& out)
 		}
 	}
 
-	out.metrics = *metrics;
-	// The fine ink bounds are not exactly kRasterScale times the 64px-em ones
-	// (different ppem rounding), so keep the quad size in sync with what was
-	// actually rasterized.
+	// Full metrics, all derived from the fine raster.
+	out.metrics.index = index;
+	out.metrics.advance = (float)design.advanceWidth * m_scale / (float)kUnitScale;
 	out.metrics.width = (float)width / (float)kUnitScale;
 	out.metrics.height = (float)height / (float)kUnitScale;
+	out.metrics.left = (float)(rect.left - pad_x) / (float)(kUnitScale * kRasterScale);
+	out.metrics.top = (float)(rect.top - pad_y) / (float)(kUnitScale * kRasterScale);
 	out.width = width;
 	out.height = height;
 	out.pixels = pixels;
@@ -494,8 +428,7 @@ bool SdfFont::rasterizeLocked(wchar_t c, SdfGlyphBitmap& out)
 bool SdfFont::rasterize(wchar_t c, SdfGlyphBitmap& out)
 {
 	ensureThreadCom();
-	std::lock_guard<std::mutex> lock(m_mutex);
-	return rasterizeLocked(c, out);
+	return rasterizeGlyph(c, out);
 }
 
 }

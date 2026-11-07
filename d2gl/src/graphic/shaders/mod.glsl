@@ -112,8 +112,6 @@ void main()
 				// (char width, aspect stretch). At scale 1 this equals the old
 				// +-0.5 ramp.
 				float sdf = texture(u_FontTexture, vec3(v_TexCoord, v_TexIds.x)).r;
-				float range = 6.0 * (v_Extra.x / 32.0);
-				float dist0 = (sdf * 2.0 - 1.0) * range;
 				if (v_Flags.y > 0u) {
 					float mlt = v_Flags.y == 1u ? 1.0 : 0.5;
 					// Sample down-right for the drop shadow; 2 texels == one
@@ -132,6 +130,9 @@ void main()
 					float sdist = (shadow * 2.0 - 1.0) * (6.0 * ssize / 32.0);
 					FragColor.a = clamp(sdist / max(0.48 * ssize, 1.5) + 0.5, 0.0, 1.0) * mlt * v_Extra.x;
 				} else {
+					// extra.x is the font pixel size; the field spans +-6/32 em.
+					float range = 6.0 * (v_Extra.x / 32.0);
+					float dist0 = (sdf * 2.0 - 1.0) * range;
 					// extra.y is an absolute pixel dilation (stroke + bold), in
 					// game pixels like the distance itself.
 					float sharp = max(u_FontSharp, 0.1);
