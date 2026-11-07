@@ -138,6 +138,12 @@ namespace {
 		}
 	}
 
+	// Coverage raster is thresholded at this multiple of kEmSize; the stored
+	// distance field stays at kEmSize. A 1-bit mask at 64px em puts the contour
+	// on a 1-texel grid (+-0.5 texel == +-0.35 px on a 44 px glyph), which is
+	// what makes large SDF text look ragged next to an outline-based atlas.
+	constexpr int kRasterScale = 4;
+
 }
 
 SdfFont::~SdfFont()
@@ -371,12 +377,14 @@ bool SdfFont::rasterizeLocked(wchar_t c, SdfGlyphBitmap& out)
 		return false;
 
 	const uint16_t index = metrics->index;
-	// Metrics are 32-unit values; the run itself is rasterized at 64px em.
-	const float advance = metrics->advance * (float)kUnitScale;
+	// Metrics are 32-unit values; the coverage is rasterized at kRasterScale
+	// times the stored em (see kRasterScale).
+	const int em = kEmSize * kRasterScale;
+	const float advance = metrics->advance * (float)kUnitScale * (float)kRasterScale;
 
 	DWRITE_GLYPH_RUN run = {};
 	run.fontFace = m_face;
-	run.fontEmSize = (FLOAT)kEmSize;
+	run.fontEmSize = (FLOAT)em;
 	run.glyphCount = 1;
 	run.glyphIndices = &index;
 	run.glyphAdvances = &advance;
@@ -411,25 +419,31 @@ bool SdfFont::rasterizeLocked(wchar_t c, SdfGlyphBitmap& out)
 	if (FAILED(hr))
 		return false;
 
-	const int pad_x = std::min(kCellPad, std::max(0, (kCellSize - ink_w) / 2));
-	const int pad_y = std::min(kCellPad, std::max(0, (kCellSize - ink_h) / 2));
-	const int width = std::min(ink_w + pad_x * 2, kCellSize);
-	const int height = std::min(ink_h + pad_y * 2, kCellSize);
+	// Same cell geometry as makeMetrics, expressed in fine (raster) pixels.
+	const int cell = kCellSize * kRasterScale;
+	const int pad_x = std::min(kCellPad * kRasterScale, std::max(0, (cell - ink_w) / 2));
+	const int pad_y = std::min(kCellPad * kRasterScale, std::max(0, (cell - ink_h) / 2));
+	const int fine_w = std::min(ink_w + pad_x * 2, cell);
+	const int fine_h = std::min(ink_h + pad_y * 2, cell);
+	const int width = fine_w / kRasterScale;
+	const int height = fine_h / kRasterScale;
+	if (width <= 0 || height <= 0)
+		return false;
 
-	std::vector<uint8_t> mask((size_t)width * height, 0);
+	std::vector<uint8_t> mask((size_t)fine_w * fine_h, 0);
 	bool has_ink = false;
 	for (int y = 0; y < ink_h; y++) {
 		const int dy = y + pad_y;
-		if (dy >= height)
+		if (dy >= fine_h)
 			break;
 		for (int x = 0; x < ink_w; x++) {
 			const int dx = x + pad_x;
-			if (dx >= width)
+			if (dx >= fine_w)
 				break;
 			const size_t base = ((size_t)y * ink_w + x) * 3;
 			const int gray = (coverage[base] + coverage[base + 1] + coverage[base + 2]) / 3;
 			if (gray >= 128) {
-				mask[(size_t)dy * width + dx] = 1;
+				mask[(size_t)dy * fine_w + dx] = 1;
 				has_ink = true;
 			}
 		}
@@ -437,13 +451,37 @@ bool SdfFont::rasterizeLocked(wchar_t c, SdfGlyphBitmap& out)
 	if (!has_ink)
 		return false;
 
+	// Distance field at the fine resolution, then a box average down to the
+	// stored one: the field is linear between edges, so the mean of a
+	// kRasterScale x kRasterScale block is its value at the block centre, which
+	// is exactly the stored texel centre. This keeps the contour sub-texel
+	// instead of snapping it back to the 64px em grid.
+	std::vector<uint8_t> fine((size_t)fine_w * fine_h);
+	buildSdf(mask, fine_w, fine_h, kSpreadPx * kRasterScale, fine.data());
+
 	uint8_t* pixels = (uint8_t*)malloc((size_t)width * height);
 	if (!pixels)
 		return false;
 
-	buildSdf(mask, width, height, kSpreadPx, pixels);
+	constexpr int samples = kRasterScale * kRasterScale;
+	for (int y = 0; y < height; y++) {
+		for (int x = 0; x < width; x++) {
+			int sum = 0;
+			for (int sy = 0; sy < kRasterScale; sy++) {
+				const uint8_t* row = &fine[(size_t)(y * kRasterScale + sy) * fine_w + x * kRasterScale];
+				for (int sx = 0; sx < kRasterScale; sx++)
+					sum += row[sx];
+			}
+			pixels[(size_t)y * width + x] = (uint8_t)((sum + samples / 2) / samples);
+		}
+	}
 
 	out.metrics = *metrics;
+	// The fine ink bounds are not exactly kRasterScale times the 64px-em ones
+	// (different ppem rounding), so keep the quad size in sync with what was
+	// actually rasterized.
+	out.metrics.width = (float)width / (float)kUnitScale;
+	out.metrics.height = (float)height / (float)kUnitScale;
 	out.width = width;
 	out.height = height;
 	out.pixels = pixels;
