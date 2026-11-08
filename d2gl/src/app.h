@@ -27,9 +27,9 @@
 
 namespace d2gl {
 
-// Legacy sentinel for hd_text_font; an empty value now means the built-in
-// MSDF atlas. Kept so old configs still resolve to MSDF.
-inline constexpr const char* kMsdfFontMarker = "@msdf";
+// Bundled font used when hd_text_font is empty
+// (resolved against data\assets\fonts by SdfFont::load).
+inline constexpr const char* kDefaultFontFile = "chi.ttf";
 
 // clang-format off
 struct D2GLApp {
@@ -169,9 +169,8 @@ struct D2GLApp {
 		bool snap = false;                                    // 像素对齐
 		Select<int> render_mode = { 0, { { "自然 (Natural)", 0 }, { "GDI (Hinted)", 1 } } };
 		// Runtime SDF font (file path, bundled font name or system family).
-		// Defaults to the bundled Chi.ttf; a missing file falls back to the
-		// pre-generated MSDF atlas assets.
-		std::string font_file = "chi.ttf";
+		// Defaults to the bundled Chi.ttf; a missing file falls back to it.
+		std::string font_file = kDefaultFontFile;
 		int font_index = 0;
 		// Optional second face used for the ASCII range (U+0000..U+00FF); the
 		// main font keeps everything above it (CJK etc.). Empty = one face for

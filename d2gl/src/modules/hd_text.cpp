@@ -44,50 +44,6 @@ HDText::HDText()
 		auto lines = helpers::strToLines(data);
 		delete[] buffer.data;
 
-		// Optional per-glyph-set font mapping for runtime SDF mode:
-		//   <atlas set name>|<font file or system family>|<face index>
-		// Sets without an entry use the global hd_text_font.
-		std::unordered_map<std::string, std::pair<std::string, int>> font_map;
-		{
-			// Read from disk (not the MPQ) so the mapping can be edited without
-			// rebuilding d2gl.mpq. Relative paths resolve from the game root.
-			std::ifstream font_file("data\\assets\\atlases\\fonts.txt");
-			if (font_file.is_open()) {
-				auto trim = [](const std::string& s) {
-					const char* ws = " \t";
-					const auto first = s.find_first_not_of(ws);
-					if (first == std::string::npos)
-						return std::string();
-					const auto last = s.find_last_not_of(ws);
-					return s.substr(first, last - first + 1);
-				};
-
-				std::string line;
-				while (std::getline(font_file, line)) {
-					helpers::replaceAll(line, "\r", "");
-					if (line.empty() || line[0] == ';' || line[0] == '#')
-						continue;
-
-					auto cols = helpers::splitToVector(line, '|');
-					if (cols.size() < 2)
-						continue;
-
-					const auto name = trim(cols[0]);
-					const auto path = trim(cols[1]);
-					if (name.empty() || path.empty())
-						continue;
-
-					const auto index = cols.size() > 2 ? std::atoi(trim(cols[2]).c_str()) : 0;
-					font_map[name] = { path, index };
-				}
-			}
-		}
-
-		// @msdf forces the built-in atlas; otherwise a configured font (or the
-		// fonts.txt mapping) selects the runtime SDF path.
-		const bool force_msdf = App.hd_text.font_file == kMsdfFontMarker;
-		const bool runtime_mode = !force_msdf && (!App.hd_text.font_file.empty() || !font_map.empty());
-
 		std::vector<std::vector<std::string>> info_list;
 		for (auto& line : lines) {
 			helpers::replaceAll(line, " ", "");
@@ -99,19 +55,9 @@ HDText::HDText()
 		}
 
 		m_font_infos = info_list;
-		m_font_map = font_map;
 
-		bool fonts_ready = false;
-		if (runtime_mode) {
-			// Runtime SDF: DirectWrite rasterizes glyphs on demand. The per-font
-			// sizes/offsets still come from the atlas config.
-			fonts_ready = setupRuntimeFonts();
-			if (!fonts_ready)
-				error_log("[HDText] Runtime SDF fonts failed, falling back to MSDF atlas");
-		}
-
-		if (!fonts_ready)
-			fonts_ready = setupMsdfFonts();
+		if (!setupRuntimeFonts())
+			error_log("[HDText] Runtime SDF fonts failed; HD text disabled");
 
 		if (m_lang_id != LANG_ENG && m_lang_id != LANG_DEF) {
 			if (m_lang_id != LANG_POR && m_lang_id != LANG_SIN && m_lang_id != LANG_RUS) {
@@ -185,48 +131,48 @@ bool HDText::setupRuntimeFonts()
 	auto texture = Context::createTexture(ci);
 	texture->set_sub_index_size(GlyphSet::s_atlas_size);
 
-	// A font picked in the options menu overrides the per-set mapping.
-	const bool global_override = !App.hd_text.font_file.empty();
-	std::string fallback_path = global_override ? App.hd_text.font_file : std::string();
-	int fallback_index = App.hd_text.font_index;
-	if (fallback_path.empty() && !m_font_map.empty()) {
-		fallback_path = m_font_map.begin()->second.first;
-		fallback_index = m_font_map.begin()->second.second;
-	}
-
 	// Optional second face for the ASCII range (0-255). It is global: every
-	// glyph set gets it, the per-set/mapped font keeps CJK and above.
-	const std::string ascii_path = (App.hd_text.font_file_ascii == kMsdfFontMarker)
-		? std::string()
-		: App.hd_text.font_file_ascii;
+	// glyph set gets it, the main face keeps CJK and above.
+	const std::string ascii_path = App.hd_text.font_file_ascii;
 	const int ascii_index = App.hd_text.font_index_ascii;
 
+	// Every glyph set uses the same face. An empty hd_text_font means the
+	// bundled default; an unreadable selection retries with it once.
+	std::vector<std::string> candidates;
+	const std::string configured = App.hd_text.font_file.empty() ? std::string(kDefaultFontFile) : App.hd_text.font_file;
+	candidates.push_back(configured);
+	if (configured != kDefaultFontFile)
+		candidates.push_back(kDefaultFontFile);
+
+	std::unordered_map<std::string, bool> needed;
+	for (auto& info : m_font_infos)
+		needed[info[1]] = true;
+
 	std::unordered_map<std::string, GlyphSet*> new_sets;
-	for (auto& info : m_font_infos) {
-		const auto& name = info[1];
-		if (new_sets.find(name) != new_sets.end())
-			continue;
+	std::string chosen_path;
+	for (size_t ci = 0; ci < candidates.size(); ci++) {
+		for (auto& info : m_font_infos) {
+			const auto& name = info[1];
+			if (new_sets.find(name) != new_sets.end())
+				continue;
 
-		const auto map_it = m_font_map.find(name);
-		const std::string path = global_override ? App.hd_text.font_file
-			: (map_it != m_font_map.end() ? map_it->second.first : fallback_path);
-		const int index = global_override ? App.hd_text.font_index
-			: (map_it != m_font_map.end() ? map_it->second.second : fallback_index);
-		if (path.empty())
-			continue;
-
-		auto set = new GlyphSet(texture.get(), name, path, index, App.hd_text.render_mode.selected, ascii_path, ascii_index);
-		if (set->isSdfLoaded()) {
-			new_sets[name] = set;
-			// trace_log expands to a block, so the branches need braces.
-			if (!ascii_path.empty()) {
-				trace_log("[HDText] SDF set '%s' -> %s (ASCII face: %s)", name.c_str(), path.c_str(), ascii_path.c_str());
-			} else {
-				trace_log("[HDText] SDF set '%s' -> %s", name.c_str(), path.c_str());
-			}
-		} else {
-			delete set;
+			auto set = new GlyphSet(texture.get(), name, candidates[ci], App.hd_text.font_index, App.hd_text.render_mode.selected, ascii_path, ascii_index);
+			if (set->isSdfLoaded())
+				new_sets[name] = set;
+			else
+				delete set;
 		}
+
+		if (new_sets.size() == needed.size()) {
+			chosen_path = candidates[ci];
+			if (ci > 0)
+				error_log("[HDText] SDF font '%s' failed, using %s", configured.c_str(), chosen_path.c_str());
+			break;
+		}
+
+		for (auto& [name, set] : new_sets)
+			delete set;
+		new_sets.clear();
 	}
 
 	GlyphSet* fallback_set = nullptr;
@@ -236,6 +182,15 @@ bool HDText::setupRuntimeFonts()
 	}
 	if (!fallback_set)
 		return false;
+
+	for (auto& [name, set] : new_sets) {
+		// trace_log expands to a block, so the branches need braces.
+		if (!ascii_path.empty()) {
+			trace_log("[HDText] SDF set '%s' -> %s (ASCII face: %s)", name.c_str(), chosen_path.c_str(), ascii_path.c_str());
+		} else {
+			trace_log("[HDText] SDF set '%s' -> %s", name.c_str(), chosen_path.c_str());
+		}
+	}
 
 	// Retire the old sets; their raster workers may still be running and only
 	// they may touch those objects.
@@ -256,93 +211,9 @@ bool HDText::setupRuntimeFonts()
 	m_prev_font_owner = std::move(m_font_owner);
 	m_font_owner = std::move(texture);
 	m_font_texture = m_font_owner.get();
+	m_font_ready = true;
 
 	trace_log("[HDText] Runtime SDF mode, %zu sets, %u layers, cell %d", new_sets.size(), sdf_layers, GlyphSet::s_atlas_size);
-	return true;
-}
-
-bool HDText::setupMsdfFonts()
-{
-	if (m_font_infos.empty())
-		return false;
-
-	const int default_size = GlyphSet::s_texture_size;
-
-	int cell = 0;
-	for (auto& info : m_font_infos) {
-		int x, y;
-		if (!helpers::imageInfo("assets\\atlases\\" + info[1] + "\\0.png", &x, &y))
-			continue;
-		if (x != y || x == 0 || (default_size % x) != 0) {
-			trace_log("[HDText] unsupport size (%d, %d)", x, y);
-			return false;
-		}
-		cell = x;
-		break;
-	}
-	if (!cell)
-		return false;
-	GlyphSet::setAtlasSize(cell);
-
-	uint32_t png_files = 0;
-	std::unordered_map<std::string, bool> counted;
-	for (auto& info : m_font_infos) {
-		const auto& name = info[1];
-		if (counted[name])
-			continue;
-		counted[name] = true;
-
-		auto buffer = helpers::loadFile("assets\\atlases\\" + name + "\\data.csv");
-		if (buffer.size) {
-			auto pos = (buffer.data + (buffer.size - 5));
-			while (*pos != '\n' || pos == buffer.data)
-				pos--;
-			auto start = pos + 1;
-			auto end = start;
-			while (*end >= '0' && *end <= '9') end++;
-			png_files += (uint32_t)std::atoi(std::string(start, end).c_str()) + 1;
-			delete[] buffer.data;
-		}
-	}
-
-	TextureCreateInfo ci;
-	ci.layer_count = 1 + GlyphSet::getLayerCount(png_files);
-	ci.size = { default_size, default_size };
-	ci.slot = TEXTURE_SLOT_FONTS;
-	ci.filter = { GL_LINEAR, GL_LINEAR };
-	ci.use_sparse = true;
-
-	auto texture = Context::createTexture(ci);
-	texture->set_sub_index_size(GlyphSet::s_atlas_size);
-	trace_log("[HDText] MSDF atlas size %d, layers %d files %d", GlyphSet::s_atlas_size, ci.layer_count, png_files);
-
-	auto symbol_set = new GlyphSet(texture.get(), "NotoSymbol");
-	symbol_set->loadPageAsync(0);
-
-	std::unordered_map<std::string, GlyphSet*> glyph_sets;
-	for (auto& info : m_font_infos) {
-		const auto& name = info[1];
-		if (glyph_sets.find(name) == glyph_sets.end())
-			glyph_sets[name] = new GlyphSet(texture.get(), name, symbol_set);
-	}
-
-	for (auto* set : m_glyph_sets)
-		m_retired_sets.push_back(set);
-	m_glyph_sets.clear();
-	m_fonts.clear();
-
-	for (auto& info : m_font_infos)
-		makeFont(info, glyph_sets[info[1]]);
-
-	m_glyph_sets.push_back(symbol_set);
-	for (auto& [name, set] : glyph_sets) {
-		m_glyph_sets.push_back(set);
-		set->loadPageAsync(0);
-	}
-
-	m_prev_font_owner = std::move(m_font_owner);
-	m_font_owner = std::move(texture);
-	m_font_texture = m_font_owner.get();
 	return true;
 }
 
@@ -352,23 +223,16 @@ bool HDText::reloadFonts()
 	if (m_font_infos.empty())
 		return false;
 
-	const bool force_msdf = App.hd_text.font_file == kMsdfFontMarker;
-	const bool runtime = !force_msdf && (!App.hd_text.font_file.empty() || !m_font_map.empty());
-	const bool ok = runtime ? setupRuntimeFonts() : setupMsdfFonts();
-	if (!ok) {
+	if (!setupRuntimeFonts()) {
 		error_log("[HDText] Live font reload failed, keeping current fonts");
 		if (m_font_texture)
 			m_font_texture->bind(true);
 		return false;
 	}
 
-	if (!runtime) {
-		trace_log("[HDText] Live font reload: built-in MSDF atlas");
-	} else {
-		trace_log("[HDText] Live font reload: %s (%s)",
-			App.hd_text.font_file.empty() ? "per-set fonts.txt" : App.hd_text.font_file.c_str(),
-			App.hd_text.render_mode.selected ? "GDI" : "Natural");
-	}
+	trace_log("[HDText] Live font reload: %s (%s)",
+		App.hd_text.font_file.empty() ? kDefaultFontFile : App.hd_text.font_file.c_str(),
+		App.hd_text.render_mode.selected ? "GDI" : "Natural");
 	return true;
 }
 
@@ -1290,7 +1154,7 @@ void HDText::drawItemQuantity(bool draw, int x, int y)
 
 			const auto old_size = modules::HDText::Instance().getTextSize();
 			d2::setTextSizeHooked(6);
-			if (App.hd_text.active) {
+			if (modules::HDText::Instance().isActive()) {
 				static auto bg = std::make_unique<Object>();
 				uint32_t width, height;
 

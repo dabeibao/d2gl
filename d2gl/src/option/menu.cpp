@@ -81,19 +81,15 @@ static float getScale(HWND hwnd) {
     return dpi / 96.0f;
 }
 
-// Scans data\assets\fonts for selectable runtime SDF fonts. Index 0 follows
-// fonts.txt (or MSDF if it is absent); index 1 forces the built-in MSDF atlas.
+// Scans data\assets\fonts for selectable SDF fonts. Index 0 uses the bundled
+// default font.
 static void refreshFontList(std::vector<std::string>& paths, Select<int>& select, const std::string& current, bool ascii_only = false)
 {
 	paths.clear();
 	select.items.clear();
 
 	paths.emplace_back();
-	select.items.push_back({ ascii_only ? "跟随主字体" : "默认 (fonts.txt / 自动)", 0 });
-	if (!ascii_only) {
-		paths.emplace_back(kMsdfFontMarker);
-		select.items.push_back({ "内置 MSDF 图集", 1 });
-	}
+	select.items.push_back({ ascii_only ? std::string("跟随主字体") : std::string("默认 (") + kDefaultFontFile + ")", 0 });
 
 	std::vector<std::pair<std::string, std::string>> files;
 	std::error_code ec;

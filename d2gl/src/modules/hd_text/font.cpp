@@ -154,33 +154,26 @@ float Font::drawChar(wchar_t c, glm::vec2 pos, uint32_t color)
 			return advance;
 
 		glm::vec2 object_pos = { pos.x + glyph->offset.x * m_scale * char_width, pos.y + glyph->offset.y * m_scale };
-		float weight = m_weight;
-		if (m_glyph_set->isSdf()) {
-			// Runtime SDF branch: extra.y is an absolute pixel shift made of
-			// the stroke multiplier plus the explicit bold width.
-			weight = (App.hd_text.stroke.value - 1.0f) * m_font_size * 0.06f + App.hd_text.bold.value;
-			// The ASCII face is usually a lighter cut than the atlas' Latin, so
-			// it gets its own pixel bias instead of dragging 加粗 up for CJK too.
-			if (m_glyph_set->isAsciiChar(c))
-				weight += App.hd_text.ascii_bold.value;
-		} else if (m_glyph_set->isSymbol()) {
-			object_pos.y += m_font_size * m_symbol_offset;
-			weight = 1.0f + ((m_weight - 1.0f) * 0.5f);
-		}
+		// extra.y is an absolute pixel shift made of the stroke multiplier plus
+		// the explicit bold width.
+		float weight = (App.hd_text.stroke.value - 1.0f) * m_font_size * 0.06f + App.hd_text.bold.value;
+		// The ASCII face is usually a lighter cut than the main face, so it gets
+		// its own pixel bias instead of dragging 加粗 up for CJK too.
+		if (m_glyph_set->isAsciiChar(c))
+			weight += App.hd_text.ascii_bold.value;
 
 		// Pixel snapping keeps the SDF glyphs aligned with the output pixels.
 		// Positions are in game pixels and the window scale is applied later in
 		// the vertex shader, so round in *physical* pixels: rounding to a game
 		// pixel only lands on the device grid when window/game is an integer.
-		if (m_glyph_set->isSdf() && App.hd_text.snap) {
+		if (App.hd_text.snap) {
 			const glm::vec2 s = App.viewport.scale;
 			object_pos.x = s.x > 0.0f ? floorf(object_pos.x * s.x + 0.5f) / s.x : object_pos.x;
 			object_pos.y = s.y > 0.0f ? floorf(object_pos.y * s.y + 0.5f) / s.y : object_pos.y;
 		}
 
 		m_object->setSize({ glyph->size.x * m_scale * char_width, glyph->size.y * m_scale });
-		// tex_ids.y selects the shader glyph source: 0 = MSDF atlas, 1 = runtime SDF
-		m_object->setTexIds({ glyph->tex_id, (int16_t)(m_glyph_set->isSdf() ? 1 : 0) });
+		m_object->setTexIds({ glyph->tex_id, 0 });
 		m_object->setTexCoord(glyph->tex_coord);
 		m_object->setPosition(object_pos);
 		m_object->setColor(color);

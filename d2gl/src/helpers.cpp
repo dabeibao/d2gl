@@ -417,30 +417,6 @@ ImageData loadImageFromFile(const std::string& file_path, bool flipped)
 	return image;
 }
 
-ImageData loadImageFromMemory(const uint8_t* data, size_t size, bool flipped)
-{
-	ImageData image = { 0 };
-
-	if (data && size) {
-		stbi_set_flip_vertically_on_load_thread(flipped);
-		image.data = stbi_load_from_memory(data, (int)size, &image.width, &image.height, &image.bit, 4);
-	}
-
-	return image;
-}
-
-bool imageInfo(const std::string& file_path, int * x, int * y)
-{
-	auto buffer = loadFile(file_path);
-	if (buffer.size) {
-		int ret = stbi_info_from_memory(buffer.data, buffer.size, x, y, nullptr);
-		delete[] buffer.data;
-		return ret != 0? true : false;
-	}
-
-	return false;
-}
-
 static void decodeDXT5Block(const uint8_t* block, int x, int y, int w, int h, uint8_t* out)
 {
 	uint8_t alpha[8];

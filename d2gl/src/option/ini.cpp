@@ -232,7 +232,7 @@ void saveIni()
 		"hd_text=%s\n"
 		"hd_text_scale=%.3f\n"
 		"; Runtime SDF font: TTF/OTF/TTC path or system family name.\n"
-		"; Leave empty to use the MSDF atlas assets.\n"
+		"; Leave empty to use the bundled chi.ttf.\n"
 		"hd_text_font=%s\n"
 		"hd_text_font_index=%d\n"
 		"; Second runtime SDF face for ASCII (0-255); hd_text_font keeps CJK and\n"

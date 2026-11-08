@@ -41,13 +41,14 @@ clang++ -x c++ -std=c++20 -Wall -fms-compatibility-version=19.10 `
 
 ### HD Text (`d2gl/src/modules/hd_text/`)
 
-MSDF (Multi-channel Signed Distance Field) 字体渲染系统。
+Runtime SDF (Signed Distance Field) 字体渲染系统。DirectWrite 按需栅格化
+TTF/OTF 字形,送入单通道 (R8) 的稀疏纹理数组。
 
-- `glyph_set.{h,cpp}`: 字形集管理。从 PNG atlas 加载,支持 lazy-load
-  - `m_glyphes`: 已加载的字形 map (`wchar_t -> Glyph`)
-  - `m_page_glyphs`: 每 page 的字形 CSV 解析结果,加载前的 metrics 缓存
-  - `m_page_states`: page 加载状态 (NOT_LOADED / LOADING / LOADED)
+- `sdf_font.{h,cpp}`: DirectWrite 字形栅格化与 8SSEDT SDF 生成
+- `glyph_set.{h,cpp}`: 字形集管理,LRU 字形缓存 (4096 glyphs)
+  - `m_glyphes`: 字形 map (`wchar_t -> Glyph`),游戏线程直接持有指针
   - **sentinel 约定**: `tex_id == 0xFFFF` 表示 placeholder/dummy glyph,`drawChar` 应跳过渲染
+  - 淘汰只失效节点,不删除,避免游戏线程持有的 `Glyph*` 悬空
 - `font.{h,cpp}`: 字体类,封装字形集 + 大小/颜色/对齐等
 - `hd_text.{h,cpp}`: HD Text 模块入口,管理多字体 + 文本布局
 

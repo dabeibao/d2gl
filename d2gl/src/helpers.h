@@ -72,7 +72,6 @@ uint32_t hash(const void* key, size_t len);
 BufferData loadFile(const std::string& file_path);
 ImageData loadImage(const std::string& file_path, bool flipped = true);
 ImageData loadImageFromFile(const std::string& file_path, bool flipped = true);
-ImageData loadImageFromMemory(const uint8_t* data, size_t size, bool flipped = true);
 ImageData loadSprite(const std::string& file_path);
 ImageData loadSpriteFromMemory(const uint8_t* data, size_t size);
 bool loadSpriteInfo(const uint8_t* data, size_t size, int& total_width, int& height, uint32_t& frame_count);
@@ -82,7 +81,6 @@ bool loadSpriteInfo(const uint8_t* data, size_t size, int& total_width, int& hei
 ImageData decodeDXT5(const uint8_t* input, int width, int height, size_t input_size);
 
 void clearImage(ImageData& image);
-bool imageInfo(const std::string& file_path, int * x, int * y);
 
 std::string saveScreenShot(uint8_t* data, int width, int height);
 

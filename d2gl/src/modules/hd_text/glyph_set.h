@@ -38,15 +38,6 @@ struct Glyph {
 	glm::vec4 tex_coord = { 0.0f, 0.0f, 0.0f, 0.0f };
 };
 
-enum class PageState : uint8_t { NOT_LOADED, LOADING, LOADED };
-
-struct CompletedPage {
-	int page_index;
-	ImageData image;
-	std::vector<std::pair<wchar_t, Glyph>> glyphs;
-	uint64_t start_ts;
-};
-
 struct CompletedSdfGlyph {
 	wchar_t cc;
 	SdfGlyphBitmap bitmap;
@@ -54,20 +45,12 @@ struct CompletedSdfGlyph {
 
 class GlyphSet {
 	std::unordered_map<wchar_t, Glyph> m_glyphes;
-	std::unordered_map<wchar_t, Glyph>* m_symbols = nullptr;
-	bool m_is_symbol = false;
 
 	std::string m_name;
 	Texture* m_texture = nullptr;
 
-	std::unordered_map<wchar_t, uint16_t> m_glyph_page;
-	std::vector<PageState> m_page_states;
-	std::vector<std::vector<std::pair<wchar_t, Glyph>>> m_page_glyphs;
-	int m_page_count = 0;
-
 	std::mutex m_mutex;
 	std::condition_variable m_destroy_cv;
-	std::vector<CompletedPage> m_completed;
 	std::atomic<int> m_pending_tasks{ 0 };
 
 	// Runtime SDF mode (DirectWrite). Glyphs live in a fixed 64px-em atlas and
@@ -104,26 +87,19 @@ public:
 	// texture layer count is derived from it (see HDText::setupRuntimeFonts).
 	static constexpr uint32_t kMaxGlyphs = 4096;
 
-	GlyphSet(Texture* texture, const std::string& name, GlyphSet* symbol_set = nullptr);
 	GlyphSet(Texture* texture, const std::string& name, const std::string& font_path, int face_index, int render_mode = 0,
 		const std::string& ascii_path = std::string(), int ascii_index = 0);
 	~GlyphSet();
 
 	const Glyph* getGlyph(wchar_t c);
-	inline bool isSymbol() { return m_is_symbol; }
-	inline bool isSdf() { return m_sdf != nullptr; }
 	inline bool isSdfLoaded() { return m_sdf && m_sdf->isLoaded(); }
 	// True when this codepoint is drawn by the optional ASCII face (so the
 	// caller can apply its own weight bias).
 	inline bool isAsciiChar(wchar_t c) { return m_sdf_ascii && (uint32_t)c < kAsciiFaceLimit; }
-	inline std::unordered_map<wchar_t, Glyph>* getGlyphes() { return &m_glyphes; }
 
-	void initLoadPages(const std::vector<int>& pages);
-	void loadPageAsync(int page_index);
 	void pollCompletions(CommandBuffer* cmd_buf);
 
 	static void setAtlasSize(int size);
-	static int getLayerCount(int png);
 	static const int s_texture_size;
 	static int s_atlas_size;
 	static int s_index_per_row;

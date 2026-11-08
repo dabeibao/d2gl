@@ -28,9 +28,9 @@ struct IDWriteFontFace;
 
 namespace d2gl {
 
-// Metrics are expressed in the same "32px em" units the MSDF atlas used:
-// 1 unit == 1 pixel at a 32px em. Font::drawChar multiplies them by
-// m_font_size / 32, so layout and scaling stay identical to the old path.
+// Metrics are expressed in 32px-em units: 1 unit == 1 pixel at a 32px em.
+// Font::drawChar multiplies them by m_font_size / 32, so layout and scaling
+// stay identical to the original atlas layout.
 // The distance field itself is rasterized at 2x (64px em, 128px cells), but the
 // coverage mask it is built from is thresholded at 4x that em so the contour is
 // not quantized to the 64px em texel grid. Half of the previous 128px em: at
@@ -52,9 +52,9 @@ struct SdfGlyphBitmap {
 	uint8_t* pixels = nullptr; // single channel SDF, malloc'd (freed by the upload path)
 };
 
-// Runtime SDF glyph source backed by DirectWrite. Replaces the pre-generated
-// MSDF atlases: the TTF/OTF is rasterized on demand, the coverage bitmap is
-// converted to a signed distance field and uploaded into the font texture array.
+// Runtime SDF glyph source backed by DirectWrite: the TTF/OTF is rasterized on
+// demand, the coverage bitmap is converted to a signed distance field and
+// uploaded into the font texture array.
 class SdfFont {
 public:
 	static constexpr int kEmSize = 64;        // rasterization em (2x the 32-unit base)

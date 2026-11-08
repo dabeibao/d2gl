@@ -22,6 +22,7 @@
 #include "graphic/texture.h"
 #include "hd_text/font.h"
 
+#include <atomic>
 #include <mutex>
 
 namespace d2gl::modules {
@@ -53,9 +54,9 @@ class HDText {
 	// Guards m_fonts / m_glyph_sets against the live font reload, which runs on
 	// the render thread while the game thread may still be drawing text.
 	std::recursive_mutex m_font_mutex;
+	std::atomic<bool> m_font_ready{ false };
 	std::vector<std::vector<std::string>> m_font_infos;
-	std::unordered_map<std::string, std::pair<std::string, int>> m_font_map;
-	std::unique_ptr<Texture> m_font_owner;      // current SDF (R8) or MSDF (RGBA8) atlas
+	std::unique_ptr<Texture> m_font_owner;      // current SDF (R8) atlas
 	std::unique_ptr<Texture> m_prev_font_owner; // held one generation for in-flight uploads
 	Texture* m_font_texture = nullptr;
 	std::vector<GlyphSet*> m_retired_sets; // old sets stay alive for their workers
@@ -95,7 +96,7 @@ public:
 		return instance;
 	}
 
-	inline bool isActive() { return App.hd_text.active; }
+	inline bool isActive() { return App.hd_text.active && m_font_ready.load(std::memory_order_relaxed); }
 	inline void setMVP(const glm::mat4& mvp) { m_mvp = mvp; }
 
 	void reset();
@@ -135,7 +136,6 @@ public:
 
 private:
 	bool setupRuntimeFonts();
-	bool setupMsdfFonts();
 	void makeFont(const std::vector<std::string>& info, GlyphSet* set);
 
 	void drawMonsterHealthBar(d2::UnitAny* unit);
