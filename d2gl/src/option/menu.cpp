@@ -44,29 +44,67 @@ namespace d2gl::option {
 	if (!changed && x)  \
 	changed = true
 
-#include "chinese.h"
-static const ImWchar * buildSimplifiedChineseRange()
+// Glyphs that are always included in the menu fonts. Every other character,
+// including the static menu labels and dynamic strings such as font file
+// names, is added at runtime by Menu::requestGlyphs().
+static const ImWchar base_glyph_ranges[] = {
+	0x0020, 0x00FF, // Basic Latin + Latin Supplement
+	0x2000, 0x206F, // General Punctuation
+	0x3000, 0x30FF, // CJK Symbols and Punctuations, Hiragana, Katakana
+	0x31F0, 0x31FF, // Katakana Phonetic Extensions
+};
+
+static bool isBaseGlyph(ImWchar c)
 {
-    static ImWchar base_ranges[] = // not zero-terminated
-    {
-        0x0020, 0x00FF, // Basic Latin + Latin Supplement
-        0x2000, 0x206F, // General Punctuation
-        0x3000, 0x30FF, // CJK Symbols and Punctuations, Hiragana, Katakana
-        0x31F0, 0x31FF, // Katakana Phonetic Extensions
-    };
-
-    static ImWchar full_ranges[IM_ARRAYSIZE(base_ranges) + IM_ARRAYSIZE(simplified_chinese_chars) * 2 + 1] = { 0 };
-    if (!full_ranges[0])
-    {
-        memcpy(full_ranges, base_ranges, sizeof(base_ranges));
-
-	ImWchar * offset = &full_ranges[IM_ARRAYSIZE(base_ranges)];
-	for (int i = 0; i < IM_ARRAYSIZE(simplified_chinese_chars); i += 1, offset += 2) {
-		offset[0] = offset[1] = (ImWchar)simplified_chinese_chars[i];
+	for (size_t i = 0; i < IM_ARRAYSIZE(base_glyph_ranges); i += 2) {
+		if (c >= base_glyph_ranges[i] && c <= base_glyph_ranges[i + 1])
+			return true;
 	}
-	offset[0] = 0;
-    }
-    return &full_ranges[0];
+	return false;
+}
+
+// Decode one UTF-8 code point. Returns the number of bytes consumed; `out` is
+// set to 0 for a malformed sequence or a code point above the BMP (ImWchar is
+// 16-bit in this build).
+static int decodeUtf8(const char* str, ImWchar* out)
+{
+	const unsigned char* s = (const unsigned char*)str;
+	unsigned int c = s[0];
+	if (c < 0x80) {
+		*out = (ImWchar)c;
+		return 1;
+	}
+
+	int len;
+	if ((c & 0xE0) == 0xC0) {
+		c &= 0x1F;
+		len = 2;
+	} else if ((c & 0xF0) == 0xE0) {
+		c &= 0x0F;
+		len = 3;
+	} else if ((c & 0xF8) == 0xF0) {
+		c &= 0x07;
+		len = 4;
+	} else {
+		*out = 0;
+		return 1;
+	}
+
+	for (int i = 1; i < len; i++) {
+		const unsigned char cc = s[i];
+		if (cc == 0) {
+			*out = 0;
+			return i;
+		}
+		if ((cc & 0xC0) != 0x80) {
+			*out = 0;
+			return 1;
+		}
+		c = (c << 6) | (cc & 0x3F);
+	}
+
+	*out = c > 0xFFFF ? 0 : (ImWchar)c;
+	return len;
 }
 
 typedef UINT (WINAPI *GetDpiForWindow_t)(HWND hwnd);
@@ -83,6 +121,14 @@ static float getScale(HWND hwnd) {
 
 // Scans data\assets\fonts for selectable SDF fonts. Index 0 uses the bundled
 // default font.
+static std::string pathToUtf8(const std::filesystem::path& path)
+{
+	// std::filesystem::path::string() uses the ANSI code page on Windows, which
+	// ImGui cannot render. Convert explicitly so non-ASCII file names work.
+	const auto str = path.u8string();
+	return std::string(str.begin(), str.end());
+}
+
 static void refreshFontList(std::vector<std::string>& paths, Select<int>& select, const std::string& current, bool ascii_only = false)
 {
 	paths.clear();
@@ -103,7 +149,7 @@ static void refreshFontList(std::vector<std::string>& paths, Select<int>& select
 		if (ext != ".ttf" && ext != ".otf" && ext != ".ttc")
 			continue;
 
-		files.emplace_back(it->path().filename().string(), it->path().string());
+		files.emplace_back(pathToUtf8(it->path().filename()), it->path().string());
 	}
 	std::sort(files.begin(), files.end());
 
@@ -129,7 +175,7 @@ static void refreshFontList(std::vector<std::string>& paths, Select<int>& select
 			}
 		}
 		if (!found) {
-			select.items.push_back({ current, (int)paths.size() });
+			select.items.push_back({ pathToUtf8(std::filesystem::path(current)), (int)paths.size() });
 			paths.push_back(current);
 			select.selected = (int)paths.size() - 1;
 		}
@@ -202,24 +248,87 @@ Menu::Menu()
 	io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
 	io.IniFilename = NULL;
 
-	BufferData font1 = helpers::loadFile("assets\\fonts\\Chi.ttf");
-	BufferData &font2 = font1;
-	auto glyphs = buildSimplifiedChineseRange();
+	BufferData font = helpers::loadFile("assets\\fonts\\Chi.ttf");
+	if (font.size) {
+		m_font_data.assign(font.data, font.data + font.size);
+		delete[] font.data;
+	}
 
-	io.Fonts->AddFontDefault();
-	m_fonts[20] = font1.size ? io.Fonts->AddFontFromMemoryTTF((void*)font1.data, font1.size, 20.0f * m_scale,
-								  nullptr, glyphs) : io.Fonts->Fonts[0];
-	m_fonts[17] = font1.size ? io.Fonts->AddFontFromMemoryTTF((void*)font1.data, font1.size, 17.0f * m_scale,
-								  nullptr, glyphs) : io.Fonts->Fonts[0];
-	m_fonts[15] = font1.size ? io.Fonts->AddFontFromMemoryTTF((void*)font1.data, font1.size, 15.0f * m_scale,
-								  nullptr, glyphs) : io.Fonts->Fonts[0];
-	m_fonts[14] = font2.size ? io.Fonts->AddFontFromMemoryTTF((void*)font2.data, font2.size, 14.0f * m_scale,
-								  nullptr, glyphs) : io.Fonts->Fonts[0];
-	m_fonts[12] = font2.size ? io.Fonts->AddFontFromMemoryTTF((void*)font2.data, font2.size, 12.0f * m_scale,
-								  nullptr, glyphs) : io.Fonts->Fonts[0];
+	rebuildFontAtlas(false);
 
 	App.menu_title += (ISGLIDE3X() ? " (Glide / " : " (DDraw / ");
 	App.menu_title += "OpenGL: " + App.gl_ver_str + " / D2LoD: " + helpers::getVersionString() + " / " + helpers::getLangString() + ")";
+}
+
+void Menu::requestGlyphs(const char* text)
+{
+	if (!text || !text[0] || m_font_data.empty())
+		return;
+
+	while (*text) {
+		ImWchar c = 0;
+		text += decodeUtf8(text, &c);
+		if (c < 0x20 || isBaseGlyph(c))
+			continue;
+		if (m_extra_glyphs.insert(c).second)
+			m_glyphs_dirty = true;
+	}
+}
+
+void Menu::buildGlyphRanges()
+{
+	m_glyph_ranges.assign(base_glyph_ranges, base_glyph_ranges + IM_ARRAYSIZE(base_glyph_ranges));
+
+	std::vector<ImWchar> extra(m_extra_glyphs.begin(), m_extra_glyphs.end());
+	std::sort(extra.begin(), extra.end());
+	for (const ImWchar c : extra) {
+		// Merge runs so the font builder walks fewer ranges.
+		if (m_glyph_ranges.size() > IM_ARRAYSIZE(base_glyph_ranges) &&
+		    m_glyph_ranges[m_glyph_ranges.size() - 1] == (ImWchar)(c - 1)) {
+			m_glyph_ranges.back() = c;
+		} else {
+			m_glyph_ranges.push_back(c);
+			m_glyph_ranges.push_back(c);
+		}
+	}
+	m_glyph_ranges.push_back(0);
+}
+
+void Menu::rebuildFontAtlas(bool recreate_texture)
+{
+	ImGuiIO& io = ImGui::GetIO();
+	const bool has_texture = io.Fonts->TexID != 0;
+
+	io.Fonts->Clear();
+	buildGlyphRanges();
+
+	io.Fonts->AddFontDefault();
+
+	if (!m_font_data.empty()) {
+		// The atlas takes ownership of this buffer when the font is added;
+		// all sizes below share it, so only the first config keeps ownership.
+		void* data = IM_ALLOC(m_font_data.size());
+		memcpy(data, m_font_data.data(), m_font_data.size());
+
+		const ImWchar* glyphs = m_glyph_ranges.data();
+		const int first_config = io.Fonts->ConfigData.Size;
+		const int data_size = (int)m_font_data.size();
+		m_fonts[20] = io.Fonts->AddFontFromMemoryTTF(data, data_size, 20.0f * m_scale, nullptr, glyphs);
+		m_fonts[17] = io.Fonts->AddFontFromMemoryTTF(data, data_size, 17.0f * m_scale, nullptr, glyphs);
+		m_fonts[15] = io.Fonts->AddFontFromMemoryTTF(data, data_size, 15.0f * m_scale, nullptr, glyphs);
+		m_fonts[14] = io.Fonts->AddFontFromMemoryTTF(data, data_size, 14.0f * m_scale, nullptr, glyphs);
+		m_fonts[12] = io.Fonts->AddFontFromMemoryTTF(data, data_size, 12.0f * m_scale, nullptr, glyphs);
+
+		for (int i = first_config + 1; i < io.Fonts->ConfigData.Size; i++)
+			io.Fonts->ConfigData[i].FontDataOwnedByAtlas = false;
+	} else {
+		ImFont* font = io.Fonts->Fonts[0];
+		for (const int size : { 20, 17, 15, 14, 12 })
+			m_fonts[size] = font;
+	}
+
+	if (recreate_texture && has_texture)
+		App.context->imguiRebuildFontTexture();
 }
 
 void Menu::toggle(bool force)
@@ -258,6 +367,15 @@ void Menu::draw()
 {
 	if (!m_visible)
 		return;
+
+	// Only safe point to rebuild the font atlas: outside a NewFrame/EndFrame
+	// pair. Glyphs discovered while drawing are applied at the end of that
+	// frame, which then gets discarded (see below).
+	requestGlyphs(App.menu_title.c_str());
+	if (m_glyphs_dirty) {
+		m_glyphs_dirty = false;
+		rebuildFontAtlas(true);
+	}
 
 	App.context->imguiStartFrame();
 
@@ -731,6 +849,7 @@ void Menu::draw()
 		ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 0.0f);
 		ImGui::BeginChildFrame(ImGui::GetID("#wiki"), { 300.0f * m_scale, 24.0f * m_scale}, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBackground);
 		ImGui::PopStyleVar(3);
+		requestGlyphs(" 打开配置 Wiki 页面 >");
 		ImGui::PushFont(m_fonts[15]);
 		if (ImGui::Button(" 打开配置 Wiki 页面 >"))
 			ShellExecute(0, 0, L"https://github.com/bayaraa/d2gl/wiki/Configuration", 0, 0, SW_SHOW);
@@ -743,12 +862,23 @@ void Menu::draw()
 	if (!m_visible)
 		m_closing = true;
 
+	// New glyphs discovered while drawing are not in the current atlas yet.
+	// Drop this frame's draw data and rebuild before the next frame so text is
+	// never presented with fallback glyphs (which would also shift layout).
+	if (m_glyphs_dirty) {
+		m_glyphs_dirty = false;
+		ImGui::Render(); // finalize the frame; its draw data is discarded
+		rebuildFontAtlas(true);
+		return;
+	}
+
 	App.context->imguiRender();
 }
 
 bool Menu::tabBegin(const char* title, int tab_num, int* active_tab)
 {
 	static const ImVec4 inactive_col = ImColor(100, 100, 100, 200);
+	requestGlyphs(title);
 	ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, { 16.0f * m_scale, 10.0f * m_scale});
 	ImGui::PushStyleColor(ImGuiCol_Text, tab_num == *active_tab ? m_colors[Color::Orange] : inactive_col);
 	bool ret = ImGui::BeginTabItem(title);
@@ -794,6 +924,7 @@ void Menu::childEnd()
 bool Menu::drawNav(const char* btn_label)
 {
 	static bool ret = false;
+	requestGlyphs(btn_label);
 	const ImVec4 sep_col = ImColor(40, 40, 40);
 	ImGui::PushStyleColor(ImGuiCol_Separator, sep_col);
 	ImGui::PushStyleColor(ImGuiCol_Text, m_colors[Color::Orange]);
@@ -807,6 +938,9 @@ bool Menu::drawNav(const char* btn_label)
 
 bool Menu::drawCheckbox(const char* title, bool* option, const char* desc, bool* opt)
 {
+	requestGlyphs(title);
+	requestGlyphs(desc);
+
 	ImGui::PushStyleColor(ImGuiCol_Text, m_colors[Color::Orange]);
 	if (!m_ignore_font)
 		ImGui::PushFont(m_fonts[17]);
@@ -827,6 +961,11 @@ template <typename T>
 bool Menu::drawCombo(const char* title, Select<T>* select, const char* desc, bool have_btn, int* opt, int size)
 {
 	bool ret = false;
+
+	requestGlyphs(title);
+	requestGlyphs(desc);
+	for (const auto& item : select->items)
+		requestGlyphs(item.name.c_str());
 
 	drawLabel(title, m_colors[Color::Orange], 17);
 	ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, { 8.0f * m_scale, 5.0f * m_scale });
@@ -865,6 +1004,8 @@ bool Menu::drawCombo(const char* title, Select<T>* select, const char* desc, boo
 
 void Menu::drawInput2(const std::string& id, const char* desc, glm::ivec2* input, glm::ivec2 min, glm::ivec2 max)
 {
+	requestGlyphs(desc);
+
 	float width = ImGui::GetWindowContentRegionWidth() / 2 - 2.0f;
 	ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, { 8.0f * m_scale, 5.0f * m_scale});
 	ImGui::PushFont(m_fonts[17]);
@@ -891,6 +1032,9 @@ void Menu::drawInput2(const std::string& id, const char* desc, glm::ivec2* input
 template <typename T>
 bool Menu::drawSlider(const std::string& id, const char* title, Range<T>* range, const char* format, const char* desc, T* opt)
 {
+	requestGlyphs(title);
+	requestGlyphs(desc);
+
 	drawLabel(title, m_colors[Color::Orange]);
 	ImGuiDataType type = strcmp(typeid(T).name(), "int") == 0 ? ImGuiDataType_S32 : ImGuiDataType_Float;
 	ImGui::SetNextItemWidth(80.0f);
@@ -922,6 +1066,8 @@ bool Menu::drawButton(const char* label, const ImVec2& btn_size, int size)
 {
 	bool ret = false;
 
+	requestGlyphs(label);
+
 	ImGui::PushStyleColor(ImGuiCol_Text, m_colors[Color::Orange]);
 	ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, { 8.0f, 5.0f });
 	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, { 0.0f, 8.0f });
@@ -951,6 +1097,8 @@ void Menu::drawLabel(const char* title, const ImVec4& color, int size)
 	if (!title || !title[0] || title[0] == ' ')
 		return;
 
+	requestGlyphs(title);
+
 	if (!m_ignore_font)
 		ImGui::PushFont(m_fonts[size]);
 	ImGui::PushStyleColor(ImGuiCol_Text, color);
@@ -964,6 +1112,8 @@ void Menu::drawDescription(const char* desc, const ImVec4& color, int size)
 {
 	if (!desc || !desc[0])
 		return;
+
+	requestGlyphs(desc);
 
 	if (!m_ignore_font)
 		ImGui::PushFont(m_fonts[size]);

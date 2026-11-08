@@ -256,6 +256,7 @@ public:
 
 	void imguiStartFrame();
 	void imguiRender();
+	void imguiRebuildFontTexture();
 
 	// Render-thread helpers (called by renderThread; kept separate so each
 	// stats::Scope wraps a small body instead of a huge indented block).

@@ -18,6 +18,10 @@
 
 #pragma once
 
+#include <cstdint>
+#include <unordered_set>
+#include <vector>
+
 #include <imgui/imgui.h>
 
 namespace d2gl::option {
@@ -49,8 +53,19 @@ class Menu {
 	Options m_options;
 	bool m_ignore_font = false;
 
+	// Font data is kept so the atlas can be rebuilt when dynamic text (e.g.
+	// font file names) uses characters that were not in the initial range.
+	std::vector<uint8_t> m_font_data;
+	std::unordered_set<ImWchar> m_extra_glyphs;
+	std::vector<ImWchar> m_glyph_ranges;
+	bool m_glyphs_dirty = false;
+
 	Menu();
 	~Menu() = default;
+
+	void rebuildFontAtlas(bool recreate_texture);
+	void buildGlyphRanges();
+	void requestGlyphs(const char* text);
 
 	bool tabBegin(const char* title, int tab_num, int* active_tab);
 	void tabEnd();

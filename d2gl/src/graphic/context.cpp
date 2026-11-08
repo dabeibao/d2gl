@@ -1335,6 +1335,14 @@ void Context::imguiRender()
 	ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 }
 
+void Context::imguiRebuildFontTexture()
+{
+	// The font atlas may have been rebuilt outside a frame (e.g. after new
+	// glyphs were added); make the backend upload the new texture.
+	ImGui_ImplOpenGL3_DestroyFontsTexture();
+	ImGui_ImplOpenGL3_CreateFontsTexture();
+}
+
 void APIENTRY Context::debugMessageCallback(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, const GLchar* message, const void* data)
 {
 	const char* source_str;
