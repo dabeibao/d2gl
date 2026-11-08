@@ -118,9 +118,15 @@ static void refreshFontList(std::vector<std::string>& paths, Select<int>& select
 
 	select.selected = 0;
 	if (!current.empty()) {
+		// Match on the full entry or, for a bare file name (the default is just
+		// "chi.ttf"), on the base name of the entry.
+		const auto base = current.find_last_of("\\/");
+		const std::string current_base = base == std::string::npos ? current : current.substr(base + 1);
 		bool found = false;
 		for (size_t i = 1; i < paths.size(); i++) {
-			if (_stricmp(paths[i].c_str(), current.c_str()) == 0) {
+			const auto sep = paths[i].find_last_of("\\/");
+			const std::string entry_base = sep == std::string::npos ? paths[i] : paths[i].substr(sep + 1);
+			if (_stricmp(paths[i].c_str(), current.c_str()) == 0 || _stricmp(entry_base.c_str(), current_base.c_str()) == 0) {
 				select.selected = (int)i;
 				found = true;
 				break;

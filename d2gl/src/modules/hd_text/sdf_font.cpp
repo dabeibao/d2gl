@@ -243,7 +243,15 @@ bool SdfFont::load(const std::string& path_or_family, int face_index, int render
 		return false;
 
 	const bool is_file = GetFileAttributesW(wide.c_str()) != INVALID_FILE_ATTRIBUTES;
-	const bool ok = is_file ? loadFile(wide, face_index) : loadFamily(wide);
+	bool ok = is_file ? loadFile(wide, face_index) : loadFamily(wide);
+
+	// A bare file name ("chi.ttf") is resolved against the bundled font folder
+	// before giving up, so the config does not have to spell out the path.
+	if (!ok && !is_file) {
+		const std::wstring bundled = L"data\\assets\\fonts\\" + wide;
+		if (GetFileAttributesW(bundled.c_str()) != INVALID_FILE_ATTRIBUTES)
+			ok = loadFile(bundled, face_index);
+	}
 	if (!ok) {
 		error_log("[HDText] SDF font load failed: %s", path_or_family.c_str());
 		return false;
