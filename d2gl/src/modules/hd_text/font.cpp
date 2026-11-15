@@ -41,6 +41,12 @@ glm::vec2 Font::getTextSize(const wchar_t* str, const int max_chars)
 	int line_num = 0;
 
 	while (str[char_num] != L'\0') {
+		// getNormalTextNWidth() passes the caret index in max_chars: only the
+		// glyphs before the caret may contribute to the width. The old check
+		// ran after char_num++ and counted two extra glyphs, so the chat caret
+		// stayed at the end for the first two left-arrow presses.
+		if (max_chars > 0 && char_num >= max_chars)
+			break;
 		if (str[char_num] == L'ÿ' && str[char_num + 1] == L'c') {
 			const auto color_code = str[char_num + 2];
 			if (g_text_colors.find(color_code) != g_text_colors.end()) {
@@ -58,11 +64,12 @@ glm::vec2 Font::getTextSize(const wchar_t* str, const int max_chars)
 			}
 		} else if (auto glyph = m_glyph_set->getGlyph(str[char_num])) {
 			advance += glyph->advance * m_scale * getCharWidth();
-			if (str[char_num + 1] != L'\n' && str[char_num + 1] != L'\0')
+			// A caret width must match drawText(), which adds the spacing after
+			// every drawn glyph, including the last one. A full text width
+			// (max_chars == 0) keeps the old definition (no trailing spacing).
+			if (str[char_num + 1] != L'\n' && (max_chars > 0 || str[char_num + 1] != L'\0'))
 				advance += letter_spacing;
 		}
-		if (max_chars > 0 && max_chars < char_num)
-			break;
 		char_num++;
 	}
 

@@ -54,7 +54,8 @@ namespace {
 	}
 
 	// 8SSEDT: one offset vector per pixel, seeded with zeros on the target
-	// class. 64x64 grids, so the simple two-pass version is plenty fast.
+	// class. The cell grids are small, so the simple two-pass version is
+	// plenty fast.
 	struct SdfPoint {
 		int x, y;
 	};

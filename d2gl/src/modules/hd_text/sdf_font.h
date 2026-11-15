@@ -31,11 +31,12 @@ namespace d2gl {
 // Metrics are expressed in 32px-em units: 1 unit == 1 pixel at a 32px em.
 // Font::drawChar multiplies them by m_font_size / 32, so layout and scaling
 // stay identical to the original atlas layout.
-// The distance field itself is rasterized at 2x (64px em, 128px cells), but the
-// coverage mask it is built from is thresholded at 4x that em so the contour is
-// not quantized to the 64px em texel grid. Half of the previous 128px em: at
-// the usual window/game ratio (~2x) one atlas texel still covers ~0.65 physical
-// pixels, while the atlas drops from 64KB to 16KB per glyph.
+// The distance field itself is stored at 2x (64px em, 128px cells), but the
+// coverage mask it is built from is thresholded at 3x that em (see kRasterScale
+// in sdf_font.cpp), so the contour is not quantized to the 64px em texel grid.
+// Half of the previous 128px em: at the usual window/game ratio (~2x) one atlas
+// texel still covers ~0.65 physical pixels, while the atlas drops from 64KB to
+// 16KB per glyph.
 struct SdfGlyphMetrics {
 	uint16_t index = 0;
 	float advance = 0.0f;
